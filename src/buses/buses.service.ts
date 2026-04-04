@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Bus, BusStatus } from './entities/bus.entity';
+import { BusDriver } from '../bus-drivers/entities/bus-driver.entity';
 import { CreateBusDto } from './dto/create-bus.dto';
 import { UpdateBusDto } from './dto/update-bus.dto';
 
@@ -14,6 +15,8 @@ export class BusesService {
   constructor(
     @InjectRepository(Bus)
     private readonly busRepository: Repository<Bus>,
+    @InjectRepository(BusDriver)
+    private readonly busDriverRepository: Repository<BusDriver>,
   ) {}
 
   async create(createBusDto: CreateBusDto): Promise<Bus> {
@@ -66,6 +69,50 @@ export class BusesService {
     const bus = await this.findOne(id);
     bus.status = status;
     return this.busRepository.save(bus);
+  }
+
+  // Returns bus + current active driver info (name, phone, profilePicture)
+  async findWithDriver(id: string): Promise<{
+    bus: Bus;
+    driver: { id: string; name: string; phone: string | null; profilePicture: string | null } | null;
+  }> {
+    const bus = await this.findOne(id);
+    const assignment = await this.busDriverRepository.findOne({
+      where: { busId: id, isActive: true },
+      relations: ['driver'],
+    });
+    const driver = assignment
+      ? {
+          id: assignment.driver.id,
+          name: assignment.driver.name ?? `${assignment.driver.firstName} ${assignment.driver.lastName}`,
+          phone: assignment.driver.phone,
+          profilePicture: assignment.driver.profilePicture,
+        }
+      : null;
+    return { bus, driver };
+  }
+
+  // Returns all buses for a school, each with their active driver info
+  async findAllWithDriversBySchool(schoolId: string): Promise<
+    { bus: Bus; driver: { id: string; name: string; phone: string | null } | null }[]
+  > {
+    const buses = await this.findBySchool(schoolId);
+    return Promise.all(
+      buses.map(async (bus) => {
+        const assignment = await this.busDriverRepository.findOne({
+          where: { busId: bus.id, isActive: true },
+          relations: ['driver'],
+        });
+        const driver = assignment
+          ? {
+              id: assignment.driver.id,
+              name: assignment.driver.name ?? `${assignment.driver.firstName} ${assignment.driver.lastName}`,
+              phone: assignment.driver.phone,
+            }
+          : null;
+        return { bus, driver };
+      }),
+    );
   }
 
   async assignIcon(id: string, iconId: string, iconUrl: string): Promise<Bus> {

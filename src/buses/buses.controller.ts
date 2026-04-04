@@ -51,6 +51,12 @@ export class BusesController {
     return this.busesService.findOne(id);
   }
 
+  // GET /api/buses/:id/with-driver — bus details + active driver info for parent view
+  @Get(':id/with-driver')
+  findWithDriver(@Param('id', ParseUUIDPipe) id: string) {
+    return this.busesService.findWithDriver(id);
+  }
+
   // PUT /api/buses/:id
   @Put(':id')
   update(

@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsDateString,
   IsUUID,
+  IsNumber,
 } from 'class-validator';
 import { Gender, UserRole } from '../entities/user.entity';
 
@@ -73,4 +74,12 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   profilePicture?: string;
+
+  @IsNumber()
+  @IsOptional()
+  homeLat?: number;
+
+  @IsNumber()
+  @IsOptional()
+  homeLng?: number;
 }

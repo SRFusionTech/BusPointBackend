@@ -34,4 +34,27 @@ export class FirebaseService implements OnModuleInit {
   async verifyToken(idToken: string): Promise<admin.auth.DecodedIdToken> {
     return admin.auth().verifyIdToken(idToken);
   }
+
+  async sendPushNotification(
+    fcmToken: string,
+    title: string,
+    body: string,
+    data: Record<string, string> = {},
+  ): Promise<void> {
+    if (admin.apps.length === 0) {
+      this.logger.warn('Firebase not initialized — skipping push notification');
+      return;
+    }
+    try {
+      await admin.messaging().send({
+        token: fcmToken,
+        notification: { title, body },
+        data,
+        android: { priority: 'high' },
+        apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to send FCM notification to token ${fcmToken}`, err);
+    }
+  }
 }

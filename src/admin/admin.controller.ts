@@ -1,4 +1,4 @@
-import { Controller, Post, Query } from '@nestjs/common';
+import { Controller, Post, Get, Query } from '@nestjs/common';
 import { AdminService } from './admin.service';
 
 @Controller('admin')
@@ -26,5 +26,13 @@ export class AdminController {
     @Query('child_name') childName: string,
   ) {
     return this.adminService.addParent(phone, name, schoolId, busId, childName);
+  }
+
+  // GET /api/admin/school-routes?school_id=xxx
+  // Returns all buses for the school with live location + active driver info.
+  // Admin can display all buses at once or filter by bus on the frontend.
+  @Get('school-routes')
+  getSchoolBusRoutes(@Query('school_id') schoolId: string) {
+    return this.adminService.getSchoolBusRoutes(schoolId);
   }
 }

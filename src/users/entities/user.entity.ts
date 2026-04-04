@@ -85,6 +85,13 @@ export class User {
   @Column({ nullable: true })
   profilePicture: string;
 
+  // Parent's home location for proximity-based arrival notifications
+  @Column({ type: 'float', nullable: true })
+  homeLat: number;
+
+  @Column({ type: 'float', nullable: true })
+  homeLng: number;
+
   @Column({ default: true })
   isActive: boolean;
 

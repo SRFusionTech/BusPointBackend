@@ -15,6 +15,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { Bus, BusStatus } from '../buses/entities/bus.entity';
+import { FirebaseService } from '../firebase/firebase.service';
 
 interface LocationPayload {
   busId: string;
@@ -27,6 +28,25 @@ interface StatusPayload {
   status: BusStatus;
 }
 
+// Haversine distance in meters between two GPS coordinates
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ~500 m ≈ 2 minutes at typical residential bus speed
+const ARRIVAL_THRESHOLD_METERS = 500;
+
+// Cooldown: don't re-notify the same parent for the same bus within 15 minutes
+const NOTIFICATION_COOLDOWN_MS = 15 * 60 * 1000;
+
 @WebSocketGateway({
   cors: { origin: '*' },
   namespace: '/tracking',
@@ -37,12 +57,16 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   private readonly logger = new Logger(TrackingGateway.name);
 
+  // Key: `${busId}:${parentId}`, Value: timestamp of last notification sent
+  private readonly notificationSentAt = new Map<string, number>();
+
   constructor(
     private readonly jwtService: JwtService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Bus)
     private readonly busRepository: Repository<Bus>,
+    private readonly firebaseService: FirebaseService,
   ) {}
 
   // ─── Connection lifecycle ───────────────────────────────────────────────────
@@ -83,8 +107,14 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { busId: string },
   ) {
+    const user = client.data.user as User;
     const bus = await this.busRepository.findOneBy({ id: payload.busId });
     if (!bus) throw new WsException('Bus not found');
+
+    // Parents can only subscribe to their own assigned bus
+    if (user.role === UserRole.PARENT && user.busId !== payload.busId) {
+      throw new WsException('You are not assigned to this bus');
+    }
 
     const room = `bus:${payload.busId}`;
     await client.join(room);
@@ -146,6 +176,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     // Broadcast to all subscribers of this bus
     this.server.to(`bus:${busId}`).emit('bus_location', broadcastPayload);
 
+    // Check proximity for all parents assigned to this bus and notify if near
+    this.checkAndNotifyParents(busId, lat, lng).catch((err) =>
+      this.logger.error('Error during proximity check', err),
+    );
+
     return { event: 'ack', data: broadcastPayload };
   }
 
@@ -180,5 +215,46 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   broadcastIconChange(busId: string, iconUrl: string) {
     this.server.to(`bus:${busId}`).emit('bus_icon', { busId, iconUrl });
+  }
+
+  // ─── Proximity detection: notify parents when bus is ~2 min away ────────────
+
+  private async checkAndNotifyParents(busId: string, busLat: number, busLng: number) {
+    // Find all active parents assigned to this bus that have home coordinates and an FCM token
+    const parents = await this.userRepository
+      .createQueryBuilder('u')
+      .where('u.busId = :busId', { busId })
+      .andWhere('u.role = :role', { role: UserRole.PARENT })
+      .andWhere('u.isActive = true')
+      .andWhere('u.homeLat IS NOT NULL')
+      .andWhere('u.homeLng IS NOT NULL')
+      .andWhere('u.fcmToken IS NOT NULL')
+      .getMany();
+
+    const now = Date.now();
+
+    for (const parent of parents) {
+      const distance = haversineMeters(busLat, busLng, parent.homeLat!, parent.homeLng!);
+
+      if (distance > ARRIVAL_THRESHOLD_METERS) continue;
+
+      const cooldownKey = `${busId}:${parent.id}`;
+      const lastSent = this.notificationSentAt.get(cooldownKey) ?? 0;
+
+      if (now - lastSent < NOTIFICATION_COOLDOWN_MS) continue;
+
+      this.notificationSentAt.set(cooldownKey, now);
+
+      await this.firebaseService.sendPushNotification(
+        parent.fcmToken!,
+        'Bus arriving soon!',
+        `Your child's bus is about 2 minutes away. Please be ready.`,
+        { busId, distance: String(Math.round(distance)) },
+      );
+
+      this.logger.log(
+        `Arrival notification sent to parent ${parent.id} (bus ${busId}, distance ${Math.round(distance)}m)`,
+      );
+    }
   }
 }
