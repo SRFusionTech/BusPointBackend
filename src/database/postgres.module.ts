@@ -15,9 +15,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
         password: config.get<string>('postgres.password'),
         database: config.get<string>('postgres.database'),
         entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-        // Always synchronize — no manual migrations needed for this project
         synchronize: true,
         logging: config.get<string>('NODE_ENV') === 'development',
+        // Force IPv4 — Render free tier does not support IPv6 outbound
+        extra: { family: 4 },
       }),
     }),
   ],
