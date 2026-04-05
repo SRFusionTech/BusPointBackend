@@ -44,6 +44,7 @@ export class FirebaseService implements OnModuleInit {
   async createUser(
     phone: string,
     displayName: string,
+    passwordPrefix: string,
     email?: string,
   ): Promise<string | null> {
     if (admin.apps.length === 0) {
@@ -53,11 +54,11 @@ export class FirebaseService implements OnModuleInit {
 
     const phoneNumber = `+91${phone}`;
 
-    // Default password pattern: Bus@<phone>  e.g. Bus@9876543210
+    // Password pattern: <prefix>@<phone>  e.g. Driver@9876543210 / Parent@9876543210
     const record = await admin.auth().createUser({
       phoneNumber,
       displayName,
-      password: `Bus@${phone}`,
+      password: `${passwordPrefix}@${phone}`,
       ...(email ? { email } : {}),
     });
 

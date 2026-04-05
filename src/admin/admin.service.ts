@@ -61,7 +61,8 @@ export class AdminService {
     const lastName = nameParts.slice(1).join(' ') || '-';
 
     // Create Firebase user first so the driver can sign in via OTP immediately
-    const firebaseUid = await this.firebaseService.createUser(phone, name, email);
+    // Default password: Driver@<phone>  e.g. Driver@9876543210
+    const firebaseUid = await this.firebaseService.createUser(phone, name, 'Driver', email);
 
     let driver: User;
     try {
@@ -105,7 +106,8 @@ export class AdminService {
     const lastName = nameParts.slice(1).join(' ') || '-';
 
     // Create Firebase user first so the parent can sign in via OTP immediately
-    const firebaseUid = await this.firebaseService.createUser(phone, name, email);
+    // Default password: Parent@<phone>  e.g. Parent@9876543210
+    const firebaseUid = await this.firebaseService.createUser(phone, name, 'Parent', email);
 
     let parent: User;
     try {

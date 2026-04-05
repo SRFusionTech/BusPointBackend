@@ -177,9 +177,9 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
-    // Default password is Bus@<phone>  (e.g. Bus@9876543210)
-    const expectedPassword = `Bus@${user.phone}`;
-    if (dto.password !== expectedPassword) {
+    // Default passwords: Driver@<phone> or Parent@<phone>
+    const validPasswords = [`Driver@${user.phone}`, `Parent@${user.phone}`];
+    if (!validPasswords.includes(dto.password)) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
