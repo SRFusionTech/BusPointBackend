@@ -6,6 +6,7 @@ import { Bus } from '../buses/entities/bus.entity';
 import { BusDriver } from '../bus-drivers/entities/bus-driver.entity';
 import { Role, RoleName } from '../roles/entities/role.entity';
 import { SchoolUser } from '../school-users/entities/school-user.entity';
+import { FirebaseService } from '../firebase/firebase.service';
 
 @Injectable()
 export class AdminService {
@@ -20,6 +21,7 @@ export class AdminService {
     private readonly roleRepository: Repository<Role>,
     @InjectRepository(SchoolUser)
     private readonly schoolUserRepository: Repository<SchoolUser>,
+    private readonly firebaseService: FirebaseService,
   ) {}
 
   private async getRole(name: RoleName): Promise<Role> {
@@ -53,20 +55,32 @@ export class AdminService {
       throw new ConflictException(`User with phone ${phone} already exists`);
     }
 
+    const email = `${phone}@buspoint.app`;
     const nameParts = name.trim().split(' ');
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || '-';
 
-    const driver = await this.userRepository.save(
-      this.userRepository.create({
-        firstName,
-        lastName,
-        name,
-        phone,
-        email: `${phone}@buspoint.app`,
-        busId: busId || undefined,
-      }),
-    );
+    // Create Firebase user first so the driver can sign in via OTP immediately
+    const firebaseUid = await this.firebaseService.createUser(phone, name, email);
+
+    let driver: User;
+    try {
+      driver = await this.userRepository.save(
+        this.userRepository.create({
+          firstName,
+          lastName,
+          name,
+          phone,
+          email,
+          busId: busId || undefined,
+          firebaseUid,
+        }),
+      );
+    } catch (dbErr) {
+      // Roll back the Firebase user if DB save fails
+      if (firebaseUid) await this.firebaseService.deleteUser(firebaseUid);
+      throw dbErr;
+    }
 
     await this.linkToSchool(driver.id, schoolId, RoleName.DRIVER);
 
@@ -85,21 +99,33 @@ export class AdminService {
       throw new ConflictException(`User with phone ${phone} already exists`);
     }
 
+    const email = `${phone}@buspoint.app`;
     const nameParts = name.trim().split(' ');
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || '-';
 
-    const parent = await this.userRepository.save(
-      this.userRepository.create({
-        firstName,
-        lastName,
-        name,
-        phone,
-        email: `${phone}@buspoint.app`,
-        busId,
-        childName,
-      }),
-    );
+    // Create Firebase user first so the parent can sign in via OTP immediately
+    const firebaseUid = await this.firebaseService.createUser(phone, name, email);
+
+    let parent: User;
+    try {
+      parent = await this.userRepository.save(
+        this.userRepository.create({
+          firstName,
+          lastName,
+          name,
+          phone,
+          email,
+          busId,
+          childName,
+          firebaseUid,
+        }),
+      );
+    } catch (dbErr) {
+      // Roll back the Firebase user if DB save fails
+      if (firebaseUid) await this.firebaseService.deleteUser(firebaseUid);
+      throw dbErr;
+    }
 
     await this.linkToSchool(parent.id, schoolId, RoleName.PARENT);
 

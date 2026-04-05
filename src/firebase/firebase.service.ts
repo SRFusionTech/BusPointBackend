@@ -35,6 +35,48 @@ export class FirebaseService implements OnModuleInit {
     return admin.auth().verifyIdToken(idToken);
   }
 
+  /**
+   * Programmatically create a Firebase Auth user (phone + optional email).
+   * Phone must be a 10-digit Indian number (country code +91 is prepended).
+   * Returns the Firebase UID on success, or null if Firebase is not configured.
+   * Throws if Firebase is configured but the user already exists or creation fails.
+   */
+  async createUser(
+    phone: string,
+    displayName: string,
+    email?: string,
+  ): Promise<string | null> {
+    if (admin.apps.length === 0) {
+      this.logger.warn('Firebase not initialized — skipping Firebase user creation');
+      return null;
+    }
+
+    const phoneNumber = `+91${phone}`;
+
+    const record = await admin.auth().createUser({
+      phoneNumber,
+      displayName,
+      ...(email ? { email } : {}),
+    });
+
+    this.logger.log(`Firebase user created: uid=${record.uid} phone=${phoneNumber}`);
+    return record.uid;
+  }
+
+  /**
+   * Delete a Firebase Auth user by UID.
+   * Used for rollback when DB save fails after Firebase user was already created.
+   */
+  async deleteUser(uid: string): Promise<void> {
+    if (admin.apps.length === 0) return;
+    try {
+      await admin.auth().deleteUser(uid);
+      this.logger.log(`Firebase user deleted (rollback): uid=${uid}`);
+    } catch (err) {
+      this.logger.error(`Failed to delete Firebase user uid=${uid} during rollback`, err);
+    }
+  }
+
   async sendPushNotification(
     fcmToken: string,
     title: string,
