@@ -30,7 +30,12 @@ export class AdminService {
     return role;
   }
 
-  private async linkToSchool(userId: string, schoolId: string, roleName: RoleName) {
+  private async linkToSchool(
+    userId: string,
+    schoolId: string,
+    roleName: RoleName,
+    busId?: string,
+  ) {
     const role = await this.getRole(roleName);
     const existing = await this.schoolUserRepository.findOneBy({
       userId,
@@ -39,8 +44,11 @@ export class AdminService {
     });
     if (!existing) {
       await this.schoolUserRepository.save(
-        this.schoolUserRepository.create({ userId, schoolId, roleId: role.id }),
+        this.schoolUserRepository.create({ userId, schoolId, roleId: role.id, busId }),
       );
+    } else if (busId && existing.busId !== busId) {
+      existing.busId = busId;
+      await this.schoolUserRepository.save(existing);
     }
   }
 
@@ -48,7 +56,6 @@ export class AdminService {
     phone: string,
     name: string,
     schoolId: string,
-    busId?: string,
   ): Promise<User> {
     const existing = await this.userRepository.findOneBy({ phone });
     if (existing) {
@@ -67,18 +74,9 @@ export class AdminService {
     let driver: User;
     try {
       driver = await this.userRepository.save(
-        this.userRepository.create({
-          firstName,
-          lastName,
-          name,
-          phone,
-          email,
-          busId: busId || undefined,
-          firebaseUid,
-        }),
+        this.userRepository.create({ firstName, lastName, name, phone, email, firebaseUid }),
       );
     } catch (dbErr) {
-      // Roll back the Firebase user if DB save fails
       if (firebaseUid) await this.firebaseService.deleteUser(firebaseUid);
       throw dbErr;
     }
@@ -112,24 +110,15 @@ export class AdminService {
     let parent: User;
     try {
       parent = await this.userRepository.save(
-        this.userRepository.create({
-          firstName,
-          lastName,
-          name,
-          phone,
-          email,
-          busId,
-          childName,
-          firebaseUid,
-        }),
+        this.userRepository.create({ firstName, lastName, name, phone, email, childName, firebaseUid }),
       );
     } catch (dbErr) {
-      // Roll back the Firebase user if DB save fails
       if (firebaseUid) await this.firebaseService.deleteUser(firebaseUid);
       throw dbErr;
     }
 
-    await this.linkToSchool(parent.id, schoolId, RoleName.PARENT);
+    // busId (which bus the child is on) is stored on the school_users entry
+    await this.linkToSchool(parent.id, schoolId, RoleName.PARENT, busId);
 
     return parent;
   }

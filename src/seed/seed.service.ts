@@ -51,12 +51,12 @@ export class SeedService {
     };
 
     // Helper: link user to school with role (idempotent)
-    const link = async (userId: string, schoolId: string, roleName: RoleName) => {
+    const link = async (userId: string, schoolId: string, roleName: RoleName, busId?: string) => {
       const role = roles[roleName];
       const exists = await this.schoolUserRepository.findOneBy({ userId, schoolId, roleId: role.id });
       if (!exists) {
         await this.schoolUserRepository.save(
-          this.schoolUserRepository.create({ userId, schoolId, roleId: role.id }),
+          this.schoolUserRepository.create({ userId, schoolId, roleId: role.id, busId }),
         );
       }
     };
@@ -121,21 +121,16 @@ export class SeedService {
       color: 'Yellow',
     });
 
-    // Link buses to drivers on the user record (quick-reference busId)
-    if (!driver1.busId) await this.userRepository.update(driver1.id, { busId: bus1.id });
-    if (!driver2.busId) await this.userRepository.update(driver2.id, { busId: bus2.id });
-
-    // 6. Parents
+    // 6. Parents — busId goes on school_users, not on the user record
     const parent1 = await upsertUser({
       phone: '9444444444',
       firstName: 'Priya',
       lastName: 'Sharma',
       name: 'Priya Sharma',
       email: '9444444444@buspoint.app',
-      busId: bus1.id,
       childName: 'Arjun Sharma',
     });
-    await link(parent1.id, school.id, RoleName.PARENT);
+    await link(parent1.id, school.id, RoleName.PARENT, bus1.id);
 
     const parent2 = await upsertUser({
       phone: '9555555555',
@@ -143,10 +138,9 @@ export class SeedService {
       lastName: 'Singh',
       name: 'Anjali Singh',
       email: '9555555555@buspoint.app',
-      busId: bus1.id,
       childName: 'Rohan Singh',
     });
-    await link(parent2.id, school.id, RoleName.PARENT);
+    await link(parent2.id, school.id, RoleName.PARENT, bus1.id);
 
     const parent3 = await upsertUser({
       phone: '9666666666',
@@ -154,10 +148,9 @@ export class SeedService {
       lastName: 'Gupta',
       name: 'Meena Gupta',
       email: '9666666666@buspoint.app',
-      busId: bus2.id,
       childName: 'Kavya Gupta',
     });
-    await link(parent3.id, school.id, RoleName.PARENT);
+    await link(parent3.id, school.id, RoleName.PARENT, bus2.id);
 
     this.logger.log('Seed completed successfully');
 

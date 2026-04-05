@@ -31,10 +31,6 @@ export class CreateUserDto {
   @IsNotEmpty()
   phone: string;
 
-  @IsUUID()
-  @IsOptional()
-  busId?: string;
-
   @IsString()
   @IsOptional()
   childName?: string;

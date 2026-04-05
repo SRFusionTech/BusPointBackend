@@ -39,6 +39,10 @@ export class SchoolUser {
   @Column({ nullable: true })
   roleId: string;
 
+  // For PARENT role: the bus their child is assigned to
+  @Column({ nullable: true })
+  busId: string;
+
   @Column({ default: true })
   isActive: boolean;
 

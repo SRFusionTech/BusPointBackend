@@ -5,15 +5,15 @@ import { AdminService } from './admin.service';
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
-  // POST /api/admin/add-driver?phone=xxx&name=xxx&school_id=xxx&bus_id=xxx
+  // POST /api/admin/add-driver?phone=xxx&name=xxx&school_id=xxx
+  // Bus assignment for drivers is done separately via POST /api/bus-drivers
   @Post('add-driver')
   addDriver(
     @Query('phone') phone: string,
     @Query('name') name: string,
     @Query('school_id') schoolId: string,
-    @Query('bus_id') busId?: string,
   ) {
-    return this.adminService.addDriver(phone, name, schoolId, busId);
+    return this.adminService.addDriver(phone, name, schoolId);
   }
 
   // POST /api/admin/add-parent?phone=xxx&name=xxx&school_id=xxx&bus_id=xxx&child_name=xxx

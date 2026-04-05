@@ -36,10 +36,7 @@ export class User {
   @Column({ name: 'mobile_number', type: 'varchar', unique: true, nullable: true })
   phone: string | null;
 
-  // Bus assignment for parents (child's bus) and drivers (their bus)
-  @Column({ nullable: true })
-  busId: string;
-
+  // Parent's child name (personal info, stays on user)
   @Column({ nullable: true })
   childName: string;
 

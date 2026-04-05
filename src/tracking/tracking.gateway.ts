@@ -94,8 +94,14 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
         .map((m) => m.role?.name)
         .filter((r): r is RoleName => r != null);
 
+      // For parents: cache their assigned busId from school_users
+      const parentMembership = memberships.find(
+        (m) => m.role?.name === RoleName.PARENT,
+      );
+
       client.data.user = user;
       client.data.roles = roles;
+      client.data.assignedBusId = parentMembership?.busId ?? null;
 
       this.logger.log(
         `Connected: [${roles.join(',')}] ${user.id} (socket ${client.id})`,
@@ -128,8 +134,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const bus = await this.busRepository.findOneBy({ id: payload.busId });
     if (!bus) throw new WsException('Bus not found');
 
-    // Parents can only subscribe to their own assigned bus
-    if (roles.includes(RoleName.PARENT) && user.busId !== payload.busId) {
+    // Parents can only subscribe to their own assigned bus (stored in school_users)
+    if (roles.includes(RoleName.PARENT) && client.data.assignedBusId !== payload.busId) {
       throw new WsException('You are not assigned to this bus');
     }
 
@@ -236,7 +242,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
         'r.id = su."roleId" AND r.name = :roleName',
         { roleName: RoleName.PARENT },
       )
-      .where('u."busId" = :busId', { busId })
+      .where('su."busId" = :busId', { busId })
       .andWhere('u."isActive" = true')
       .andWhere('u."homeLat" IS NOT NULL')
       .andWhere('u."homeLng" IS NOT NULL')
