@@ -53,9 +53,11 @@ export class FirebaseService implements OnModuleInit {
 
     const phoneNumber = `+91${phone}`;
 
+    // Default password pattern: Bus@<phone>  e.g. Bus@9876543210
     const record = await admin.auth().createUser({
       phoneNumber,
       displayName,
+      password: `Bus@${phone}`,
       ...(email ? { email } : {}),
     });
 

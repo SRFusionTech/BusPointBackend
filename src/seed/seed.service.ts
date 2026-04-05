@@ -174,7 +174,7 @@ export class SeedService {
         { plateNumber: bus2.plateNumber, route: bus2.routeName },
       ],
       parents: [parent1.phone, parent2.phone, parent3.phone],
-      note: 'Default password for all users is their phone number',
+      note: 'Default password for all users is Bus@<phone>  e.g. Bus@9876543210',
     };
   }
 
