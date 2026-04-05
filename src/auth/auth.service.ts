@@ -7,8 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User } from '../users/entities/user.entity';
 import { School } from '../schools/entities/school.entity';
+import { Role, RoleName } from '../roles/entities/role.entity';
+import { SchoolUser } from '../school-users/entities/school-user.entity';
 import { FirebaseService } from '../firebase/firebase.service';
 import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { LoginDto } from './dto/login.dto';
@@ -23,33 +25,43 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(School)
     private readonly schoolRepository: Repository<School>,
+    @InjectRepository(Role)
+    private readonly roleRepository: Repository<Role>,
+    @InjectRepository(SchoolUser)
+    private readonly schoolUserRepository: Repository<SchoolUser>,
     private readonly firebaseService: FirebaseService,
     private readonly jwtService: JwtService,
   ) {}
 
   private issueToken(user: User): string {
-    return this.jwtService.sign({
-      sub: user.id,
-      role: user.role,
-      phone: user.phone,
-    });
+    return this.jwtService.sign({ sub: user.id, phone: user.phone });
+  }
+
+  // Find a role by name — throws if missing (roles must be seeded)
+  private async getRole(name: RoleName): Promise<Role> {
+    const role = await this.roleRepository.findOneBy({ name });
+    if (!role) throw new BadRequestException(`Role "${name}" not found — run /api/seed first`);
+    return role;
   }
 
   private async buildAuthResponse(user: User, extra: Record<string, any> = {}) {
-    // Attach school data so the app never needs a second round-trip
-    let school: School | null = null;
-    if (user.schoolId) {
-      school = await this.schoolRepository.findOneBy({ id: user.schoolId });
-    }
+    // Load all school memberships with school + role data
+    const memberships = await this.schoolUserRepository.find({
+      where: { userId: user.id, isActive: true },
+      relations: ['school', 'role'],
+    });
 
-    // School admin with no school assigned → must complete onboarding
-    const needs_onboarding =
-      user.role === UserRole.ADMIN && !user.schoolId;
+    // Provide a convenience `school` field (first active membership's school)
+    const school = memberships[0]?.school ?? null;
+
+    // Needs onboarding if user has no school memberships at all
+    const needs_onboarding = memberships.length === 0;
 
     return {
       access_token: this.issueToken(user),
       user,
       school,
+      school_memberships: memberships,
       needs_onboarding,
       ...extra,
     };
@@ -73,7 +85,6 @@ export class AuthService {
       decodedToken.name ?? decodedToken.displayName ?? '';
     const picture: string | null = decodedToken.picture ?? null;
 
-    // Split "First Last" → firstName / lastName
     const nameParts = displayName.trim().split(/\s+/).filter(Boolean);
     const firstName = nameParts[0] || 'User';
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : uid;
@@ -82,7 +93,6 @@ export class AuthService {
     let is_new_user = false;
 
     if (!user) {
-      // Check if an existing user matches by email or phone (e.g. admin-created accounts)
       const firebasePhone = decodedToken.phone_number
         ? decodedToken.phone_number.replace(/^\+91/, '').replace(/\D/g, '')
         : null;
@@ -93,7 +103,6 @@ export class AuthService {
           : null);
 
       if (user) {
-        // Link the Firebase UID to the existing account
         user.firebaseUid = uid;
         user = await this.userRepository.save(user);
         this.logger.log(`Linked firebase_uid to existing user (id=${user.id})`);
@@ -105,7 +114,6 @@ export class AuthService {
           firstName,
           lastName,
           name: displayName || `${firstName} ${lastName}`,
-          role: UserRole.ADMIN,
           phone: null,
           profilePicture: picture ?? undefined,
           fcmToken: dto.fcmToken,
@@ -131,24 +139,12 @@ export class AuthService {
     return this.buildAuthResponse(user, { is_new_user });
   }
 
-  /**
-   * POST /auth/send-otp?phone=
-   * Firebase handles the actual OTP delivery; this is a passthrough stub.
-   */
   async sendOtp(phone: string) {
     const normalizedPhone = phone.replace(/^\+91/, '').replace(/\D/g, '');
     const user = await this.userRepository.findOneBy({ phone: normalizedPhone });
-    return {
-      success: true,
-      user_exists: !!user,
-    };
+    return { success: true, user_exists: !!user };
   }
 
-  /**
-   * POST /auth/verify-otp?phone=&otp=
-   * Firebase already verified the OTP client-side; here we just look up/create
-   * the user and issue a JWT — same flow as loginWithFirebase but phone-only.
-   */
   async verifyOtp(phone: string) {
     const normalizedPhone = phone.replace(/^\+91/, '').replace(/\D/g, '');
     let user = await this.userRepository.findOneBy({ phone: normalizedPhone });
@@ -162,7 +158,6 @@ export class AuthService {
         lastName: normalizedPhone,
         name: `User ${normalizedPhone}`,
         email: `${normalizedPhone}@buspoint.app`,
-        role: UserRole.PARENT,
       });
       user = await this.userRepository.save(user);
     }
@@ -180,11 +175,8 @@ export class AuthService {
       user = await this.userRepository.findOneBy({ phone: normalizedPhone });
     }
 
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+    if (!user) throw new UnauthorizedException('Invalid credentials');
 
-    // Default password is the user's phone number
     if (dto.password !== user.phone) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -193,33 +185,69 @@ export class AuthService {
   }
 
   /**
-   * Called by a school admin who has no school yet.
-   * Creates the school and links the admin to it in one transaction.
+   * POST /auth/onboarding/school
+   * Called by a user who has no school yet (needs_onboarding = true).
+   * Creates the school and links the calling user as SCHOOL_ADMIN.
    */
-  async completeOnboarding(adminId: string, dto: OnboardingSchoolDto) {
-    const admin = await this.userRepository.findOneBy({ id: adminId });
+  async completeOnboarding(userId: string, dto: OnboardingSchoolDto) {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    if (!user) throw new UnauthorizedException('User not found');
 
-    if (!admin) {
-      throw new UnauthorizedException('User not found');
-    }
-    if (admin.role !== UserRole.ADMIN) {
-      throw new BadRequestException('Only school admins can complete school onboarding');
-    }
-    if (admin.schoolId) {
-      throw new BadRequestException('This admin is already linked to a school');
+    // Already linked to a school as admin → can't onboard twice
+    const adminRole = await this.getRole(RoleName.SCHOOL_ADMIN);
+    const existingMembership = await this.schoolUserRepository.findOneBy({
+      userId,
+      roleId: adminRole.id,
+      isActive: true,
+    });
+    if (existingMembership) {
+      throw new BadRequestException('This user is already linked to a school as admin');
     }
 
-    // Create the school
     const school = await this.schoolRepository.save(
       this.schoolRepository.create(dto),
     );
 
-    // Link admin to the new school
-    admin.schoolId = school.id;
-    await this.userRepository.save(admin);
+    const schoolUser = await this.schoolUserRepository.save(
+      this.schoolUserRepository.create({
+        userId,
+        schoolId: school.id,
+        roleId: adminRole.id,
+      }),
+    );
 
-    this.logger.log(`School onboarding completed: ${school.name} by admin ${admin.id}`);
+    this.logger.log(`School onboarding completed: ${school.name} by user ${userId}`);
 
-    return { school, user: admin };
+    return { school, user, school_user: schoolUser };
+  }
+
+  /**
+   * PATCH /auth/link-school
+   * Link an existing user to an existing school with a given role.
+   * Useful for admins who were created before onboarding (e.g. pre-created by super-admin).
+   */
+  async linkToSchool(userId: string, schoolId: string, roleName: RoleName) {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const school = await this.schoolRepository.findOneBy({ id: schoolId });
+    if (!school) throw new BadRequestException('School not found');
+
+    const role = await this.getRole(roleName);
+
+    const existing = await this.schoolUserRepository.findOneBy({
+      userId,
+      schoolId,
+      roleId: role.id,
+    });
+    if (existing) {
+      throw new BadRequestException('User already has this role in this school');
+    }
+
+    const schoolUser = await this.schoolUserRepository.save(
+      this.schoolUserRepository.create({ userId, schoolId, roleId: role.id }),
+    );
+
+    return { school, user, school_user: schoolUser };
   }
 }

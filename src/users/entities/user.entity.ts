@@ -5,17 +5,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { RoleName } from '../../roles/entities/role.entity';
 
 export enum Gender {
   MALE = 'male',
   FEMALE = 'female',
   OTHER = 'other',
-}
-
-export enum UserRole {
-  ADMIN = 'admin',
-  DRIVER = 'driver',
-  PARENT = 'parent',
 }
 
 @Entity('users')
@@ -35,23 +30,13 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  // Populated on first Firebase sign-in; null for users created by admin
-  // before they authenticate via Firebase.
   @Column({ name: 'firebase_uid', type: 'varchar', nullable: true, unique: true })
   firebaseUid: string | null;
 
-  // DB column stays as mobile_number; property exposed as `phone` so the
-  // snake_case interceptor outputs `phone` (matches mobile app expectations).
-  // Nullable because Firebase email/Google sign-in users have no phone number.
   @Column({ name: 'mobile_number', type: 'varchar', unique: true, nullable: true })
   phone: string | null;
 
-  @Column({ type: 'enum', enum: UserRole, default: UserRole.PARENT })
-  role: UserRole;
-
-  @Column({ nullable: true })
-  schoolId: string;
-
+  // Bus assignment for parents (child's bus) and drivers (their bus)
   @Column({ nullable: true })
   busId: string;
 
@@ -100,4 +85,9 @@ export class User {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  // ─── Runtime-only (not persisted) ────────────────────────────────────────────
+  // Populated by JwtStrategy.validate() from the school_users + roles tables.
+  // Do NOT add @Column() here.
+  roles?: RoleName[];
 }

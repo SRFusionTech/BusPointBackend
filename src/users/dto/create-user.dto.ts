@@ -8,7 +8,7 @@ import {
   IsUUID,
   IsNumber,
 } from 'class-validator';
-import { Gender, UserRole } from '../entities/user.entity';
+import { Gender } from '../entities/user.entity';
 
 export class CreateUserDto {
   @IsString()
@@ -30,14 +30,6 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
   phone: string;
-
-  @IsEnum(UserRole)
-  @IsOptional()
-  role?: UserRole;
-
-  @IsUUID()
-  @IsOptional()
-  schoolId?: string;
 
   @IsUUID()
   @IsOptional()

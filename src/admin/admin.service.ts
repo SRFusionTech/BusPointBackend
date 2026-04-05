@@ -1,9 +1,11 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User } from '../users/entities/user.entity';
 import { Bus } from '../buses/entities/bus.entity';
 import { BusDriver } from '../bus-drivers/entities/bus-driver.entity';
+import { Role, RoleName } from '../roles/entities/role.entity';
+import { SchoolUser } from '../school-users/entities/school-user.entity';
 
 @Injectable()
 export class AdminService {
@@ -14,7 +16,31 @@ export class AdminService {
     private readonly busRepository: Repository<Bus>,
     @InjectRepository(BusDriver)
     private readonly busDriverRepository: Repository<BusDriver>,
+    @InjectRepository(Role)
+    private readonly roleRepository: Repository<Role>,
+    @InjectRepository(SchoolUser)
+    private readonly schoolUserRepository: Repository<SchoolUser>,
   ) {}
+
+  private async getRole(name: RoleName): Promise<Role> {
+    const role = await this.roleRepository.findOneBy({ name });
+    if (!role) throw new NotFoundException(`Role "${name}" not found — run /api/seed first`);
+    return role;
+  }
+
+  private async linkToSchool(userId: string, schoolId: string, roleName: RoleName) {
+    const role = await this.getRole(roleName);
+    const existing = await this.schoolUserRepository.findOneBy({
+      userId,
+      schoolId,
+      roleId: role.id,
+    });
+    if (!existing) {
+      await this.schoolUserRepository.save(
+        this.schoolUserRepository.create({ userId, schoolId, roleId: role.id }),
+      );
+    }
+  }
 
   async addDriver(
     phone: string,
@@ -22,7 +48,7 @@ export class AdminService {
     schoolId: string,
     busId?: string,
   ): Promise<User> {
-    const existing = await this.userRepository.findOneBy({ phone: phone });
+    const existing = await this.userRepository.findOneBy({ phone });
     if (existing) {
       throw new ConflictException(`User with phone ${phone} already exists`);
     }
@@ -31,18 +57,20 @@ export class AdminService {
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || '-';
 
-    const driver = this.userRepository.create({
-      firstName,
-      lastName,
-      name,
-      phone: phone,
-      email: `${phone}@buspoint.app`,
-      role: UserRole.DRIVER,
-      schoolId,
-      busId: busId || undefined,
-    });
+    const driver = await this.userRepository.save(
+      this.userRepository.create({
+        firstName,
+        lastName,
+        name,
+        phone,
+        email: `${phone}@buspoint.app`,
+        busId: busId || undefined,
+      }),
+    );
 
-    return this.userRepository.save(driver);
+    await this.linkToSchool(driver.id, schoolId, RoleName.DRIVER);
+
+    return driver;
   }
 
   async addParent(
@@ -52,7 +80,7 @@ export class AdminService {
     busId: string,
     childName: string,
   ): Promise<User> {
-    const existing = await this.userRepository.findOneBy({ phone: phone });
+    const existing = await this.userRepository.findOneBy({ phone });
     if (existing) {
       throw new ConflictException(`User with phone ${phone} already exists`);
     }
@@ -61,19 +89,21 @@ export class AdminService {
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || '-';
 
-    const parent = this.userRepository.create({
-      firstName,
-      lastName,
-      name,
-      phone: phone,
-      email: `${phone}@buspoint.app`,
-      role: UserRole.PARENT,
-      schoolId,
-      busId,
-      childName,
-    });
+    const parent = await this.userRepository.save(
+      this.userRepository.create({
+        firstName,
+        lastName,
+        name,
+        phone,
+        email: `${phone}@buspoint.app`,
+        busId,
+        childName,
+      }),
+    );
 
-    return this.userRepository.save(parent);
+    await this.linkToSchool(parent.id, schoolId, RoleName.PARENT);
+
+    return parent;
   }
 
   // Returns all buses for a school with live location + active driver info

@@ -5,7 +5,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, UserRole } from './entities/user.entity';
+import { User } from './entities/user.entity';
+import { SchoolUser } from '../school-users/entities/school-user.entity';
+import { Role, RoleName } from '../roles/entities/role.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -14,22 +16,22 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(SchoolUser)
+    private readonly schoolUserRepository: Repository<SchoolUser>,
+    @InjectRepository(Role)
+    private readonly roleRepository: Repository<Role>,
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     const existingEmail = await this.userRepository.findOneBy({
       email: createUserDto.email,
     });
-    if (existingEmail) {
-      throw new ConflictException('Email is already in use');
-    }
+    if (existingEmail) throw new ConflictException('Email is already in use');
 
     const existingPhone = await this.userRepository.findOneBy({
       phone: createUserDto.phone,
     });
-    if (existingPhone) {
-      throw new ConflictException('Phone number is already in use');
-    }
+    if (existingPhone) throw new ConflictException('Phone number is already in use');
 
     if (!createUserDto.name) {
       createUserDto.name = `${createUserDto.firstName} ${createUserDto.lastName}`;
@@ -39,18 +41,34 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  findAll(schoolId?: string, role?: UserRole): Promise<User[]> {
-    const where: Record<string, unknown> = {};
-    if (schoolId) where.schoolId = schoolId;
-    if (role) where.role = role;
-    return this.userRepository.findBy(where);
+  // Filter by school and/or role via school_users join
+  async findAll(schoolId?: string, roleName?: RoleName): Promise<User[]> {
+    if (!schoolId && !roleName) {
+      return this.userRepository.find();
+    }
+
+    const qb = this.userRepository
+      .createQueryBuilder('u')
+      .innerJoin(
+        SchoolUser,
+        'su',
+        'su.userId = u.id AND su.isActive = true',
+      );
+
+    if (schoolId) {
+      qb.andWhere('su.schoolId = :schoolId', { schoolId });
+    }
+
+    if (roleName) {
+      qb.innerJoin(Role, 'r', 'r.id = su.roleId AND r.name = :roleName', { roleName });
+    }
+
+    return qb.getMany();
   }
 
   async findOne(id: string): Promise<User> {
     const user = await this.userRepository.findOneBy({ id });
-    if (!user) {
-      throw new NotFoundException(`User with id ${id} not found`);
-    }
+    if (!user) throw new NotFoundException(`User with id ${id} not found`);
     return user;
   }
 

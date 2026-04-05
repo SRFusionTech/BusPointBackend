@@ -14,7 +14,7 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UserRole } from './entities/user.entity';
+import { RoleName } from '../roles/entities/role.entity';
 
 @Controller('users')
 export class UsersController {
@@ -26,11 +26,11 @@ export class UsersController {
     return this.usersService.create(createUserDto);
   }
 
-  // GET /api/users?school_id=xxx&role=driver
+  // GET /api/users?school_id=xxx&role=DRIVER
   @Get()
   findAll(
     @Query('school_id') schoolId?: string,
-    @Query('role') role?: UserRole,
+    @Query('role') role?: RoleName,
   ) {
     return this.usersService.findAll(schoolId, role);
   }

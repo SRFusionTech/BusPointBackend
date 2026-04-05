@@ -13,7 +13,7 @@ import { School } from '../../schools/entities/school.entity';
 import { Role } from '../../roles/entities/role.entity';
 
 @Entity('school_users')
-@Unique(['userId', 'schoolId'])
+@Unique(['userId', 'schoolId', 'roleId'])
 export class SchoolUser {
   @PrimaryGeneratedColumn('uuid')
   id: string;

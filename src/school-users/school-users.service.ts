@@ -20,9 +20,10 @@ export class SchoolUsersService {
     const existing = await this.schoolUserRepository.findOneBy({
       userId: createSchoolUserDto.userId,
       schoolId: createSchoolUserDto.schoolId,
+      roleId: createSchoolUserDto.roleId,
     });
     if (existing) {
-      throw new ConflictException('User is already linked to this school');
+      throw new ConflictException('User already has this role in this school');
     }
 
     const schoolUser = this.schoolUserRepository.create(createSchoolUserDto);

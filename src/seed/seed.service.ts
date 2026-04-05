@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User } from '../users/entities/user.entity';
 import { School } from '../schools/entities/school.entity';
 import { Bus } from '../buses/entities/bus.entity';
+import { Role, RoleName } from '../roles/entities/role.entity';
+import { SchoolUser } from '../school-users/entities/school-user.entity';
 
 @Injectable()
 export class SeedService {
@@ -16,10 +18,17 @@ export class SeedService {
     private readonly schoolRepository: Repository<School>,
     @InjectRepository(Bus)
     private readonly busRepository: Repository<Bus>,
+    @InjectRepository(Role)
+    private readonly roleRepository: Repository<Role>,
+    @InjectRepository(SchoolUser)
+    private readonly schoolUserRepository: Repository<SchoolUser>,
   ) {}
 
   async seed() {
-    // 1. Create school
+    // 1. Ensure all roles exist
+    const roles = await this.seedRoles();
+
+    // 2. Create school
     let school = await this.schoolRepository.findOneBy({ name: 'BusPoint Demo School' });
     if (!school) {
       school = await this.schoolRepository.save(
@@ -34,34 +43,43 @@ export class SeedService {
       this.logger.log(`School created: ${school.id}`);
     }
 
-    // Helper to upsert a user
+    // Helper: upsert user
     const upsertUser = async (data: Partial<User>): Promise<User> => {
       const existing = await this.userRepository.findOneBy({ phone: data.phone ?? undefined });
       if (existing) return existing;
       return this.userRepository.save(this.userRepository.create(data));
     };
 
-    // 2. Admin
+    // Helper: link user to school with role (idempotent)
+    const link = async (userId: string, schoolId: string, roleName: RoleName) => {
+      const role = roles[roleName];
+      const exists = await this.schoolUserRepository.findOneBy({ userId, schoolId, roleId: role.id });
+      if (!exists) {
+        await this.schoolUserRepository.save(
+          this.schoolUserRepository.create({ userId, schoolId, roleId: role.id }),
+        );
+      }
+    };
+
+    // 3. Admin
     const admin = await upsertUser({
       phone: '9999999999',
       firstName: 'Admin',
       lastName: 'Demo',
       name: 'Admin Demo',
       email: '9999999999@buspoint.app',
-      role: UserRole.ADMIN,
-      schoolId: school.id,
     });
+    await link(admin.id, school.id, RoleName.SCHOOL_ADMIN);
 
-    // 3. Drivers
+    // 4. Drivers
     const driver1 = await upsertUser({
       phone: '9111111111',
       firstName: 'Ramesh',
       lastName: 'Kumar',
       name: 'Ramesh Kumar',
       email: '9111111111@buspoint.app',
-      role: UserRole.DRIVER,
-      schoolId: school.id,
     });
+    await link(driver1.id, school.id, RoleName.DRIVER);
 
     const driver2 = await upsertUser({
       phone: '9222222222',
@@ -69,11 +87,10 @@ export class SeedService {
       lastName: 'Patel',
       name: 'Suresh Patel',
       email: '9222222222@buspoint.app',
-      role: UserRole.DRIVER,
-      schoolId: school.id,
     });
+    await link(driver2.id, school.id, RoleName.DRIVER);
 
-    // 4. Buses
+    // 5. Buses
     const upsertBus = async (data: Partial<Bus>): Promise<Bus> => {
       const existing = await this.busRepository.findOneBy({ plateNumber: data.plateNumber });
       if (existing) return existing;
@@ -104,56 +121,50 @@ export class SeedService {
       color: 'Yellow',
     });
 
-    // Link drivers to their buses
-    if (!driver1.busId) {
-      await this.userRepository.update(driver1.id, { busId: bus1.id });
-    }
-    if (!driver2.busId) {
-      await this.userRepository.update(driver2.id, { busId: bus2.id });
-    }
+    // Link buses to drivers on the user record (quick-reference busId)
+    if (!driver1.busId) await this.userRepository.update(driver1.id, { busId: bus1.id });
+    if (!driver2.busId) await this.userRepository.update(driver2.id, { busId: bus2.id });
 
-    // 5. Parents
-    await upsertUser({
+    // 6. Parents
+    const parent1 = await upsertUser({
       phone: '9444444444',
       firstName: 'Priya',
       lastName: 'Sharma',
       name: 'Priya Sharma',
       email: '9444444444@buspoint.app',
-      role: UserRole.PARENT,
-      schoolId: school.id,
       busId: bus1.id,
       childName: 'Arjun Sharma',
     });
+    await link(parent1.id, school.id, RoleName.PARENT);
 
-    await upsertUser({
+    const parent2 = await upsertUser({
       phone: '9555555555',
       firstName: 'Anjali',
       lastName: 'Singh',
       name: 'Anjali Singh',
       email: '9555555555@buspoint.app',
-      role: UserRole.PARENT,
-      schoolId: school.id,
       busId: bus1.id,
       childName: 'Rohan Singh',
     });
+    await link(parent2.id, school.id, RoleName.PARENT);
 
-    await upsertUser({
+    const parent3 = await upsertUser({
       phone: '9666666666',
       firstName: 'Meena',
       lastName: 'Gupta',
       name: 'Meena Gupta',
       email: '9666666666@buspoint.app',
-      role: UserRole.PARENT,
-      schoolId: school.id,
       busId: bus2.id,
       childName: 'Kavya Gupta',
     });
+    await link(parent3.id, school.id, RoleName.PARENT);
 
     this.logger.log('Seed completed successfully');
 
     return {
       school,
-      admin: { phone: admin.phone, role: admin.role },
+      roles: Object.keys(roles),
+      admin: { phone: admin.phone },
       drivers: [
         { phone: driver1.phone, name: driver1.name, bus: bus1.plateNumber },
         { phone: driver2.phone, name: driver2.name, bus: bus2.plateNumber },
@@ -162,8 +173,22 @@ export class SeedService {
         { plateNumber: bus1.plateNumber, route: bus1.routeName },
         { plateNumber: bus2.plateNumber, route: bus2.routeName },
       ],
-      parents: ['9444444444', '9555555555', '9666666666'],
+      parents: [parent1.phone, parent2.phone, parent3.phone],
       note: 'Default password for all users is their phone number',
     };
+  }
+
+  // Seeds the three base roles if they don't exist yet
+  async seedRoles(): Promise<Record<RoleName, Role>> {
+    const result = {} as Record<RoleName, Role>;
+    for (const name of Object.values(RoleName)) {
+      let role = await this.roleRepository.findOneBy({ name });
+      if (!role) {
+        role = await this.roleRepository.save(this.roleRepository.create({ name }));
+        this.logger.log(`Role seeded: ${name}`);
+      }
+      result[name] = role;
+    }
+    return result;
   }
 }

@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Bus, BusStatus } from '../buses/entities/bus.entity';
-import { User, UserRole } from '../users/entities/user.entity';
+import { SchoolUser } from '../school-users/entities/school-user.entity';
+import { Role, RoleName } from '../roles/entities/role.entity';
 import { Subscription, SubscriptionStatus } from '../subscriptions/entities/subscription.entity';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -13,19 +14,30 @@ export class DashboardService {
   constructor(
     @InjectRepository(Bus)
     private readonly busRepository: Repository<Bus>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    @InjectRepository(SchoolUser)
+    private readonly schoolUserRepository: Repository<SchoolUser>,
+    @InjectRepository(Role)
+    private readonly roleRepository: Repository<Role>,
     @InjectRepository(Subscription)
     private readonly subscriptionRepository: Repository<Subscription>,
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
   ) {}
 
+  private async countByRole(schoolId: string, roleName: RoleName): Promise<number> {
+    return this.schoolUserRepository
+      .createQueryBuilder('su')
+      .innerJoin(Role, 'r', 'r.id = su.roleId AND r.name = :roleName', { roleName })
+      .where('su.schoolId = :schoolId AND su.isActive = true', { schoolId })
+      .getCount();
+  }
+
   async getDashboard(schoolId: string) {
-    const [buses, totalParents, activeSubscriptions, recentNotifications] =
+    const [buses, totalParents, totalDrivers, activeSubscriptions, recentNotifications] =
       await Promise.all([
         this.busRepository.findBy({ schoolId }),
-        this.userRepository.count({ where: { schoolId, role: UserRole.PARENT } }),
+        this.countByRole(schoolId, RoleName.PARENT),
+        this.countByRole(schoolId, RoleName.DRIVER),
         this.subscriptionRepository.count({
           where: { schoolId, status: SubscriptionStatus.ACTIVE },
         }),
@@ -43,7 +55,6 @@ export class DashboardService {
 
     const idleBuses = buses.filter((b) => b.status === BusStatus.IDLE);
 
-    // Count today's trips (buses that started today)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayTrips = buses.filter(
@@ -54,10 +65,6 @@ export class DashboardService {
         b.status !== BusStatus.INACTIVE,
     ).length;
 
-    const totalDrivers = await this.userRepository.count({
-      where: { schoolId, role: UserRole.DRIVER },
-    });
-
     return {
       buses,
       active_buses_count: activeBuses.length,
@@ -65,8 +72,8 @@ export class DashboardService {
       total_buses: buses.length,
       today_trips: todayTrips,
       total_parents: totalParents,
-      active_subscriptions: activeSubscriptions,
       total_drivers: totalDrivers,
+      active_subscriptions: activeSubscriptions,
       recent_notifications: recentNotifications,
     };
   }
