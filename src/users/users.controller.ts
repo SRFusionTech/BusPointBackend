@@ -26,13 +26,14 @@ export class UsersController {
     return this.usersService.create(createUserDto);
   }
 
-  // GET /api/users?school_id=xxx&role=driver
+  // GET /api/users?school_id=xxx&role=driver&bus_id=yyy
   @Get()
   findAll(
     @Query('school_id') schoolId?: string,
     @Query('role') role?: UserRole,
+    @Query('bus_id') busId?: string,
   ) {
-    return this.usersService.findAll(schoolId, role);
+    return this.usersService.findAll(schoolId, role, busId);
   }
 
   // GET /api/users/:id

@@ -4,7 +4,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -39,10 +39,11 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  findAll(schoolId?: string, role?: UserRole): Promise<User[]> {
+  findAll(schoolId?: string, role?: UserRole, busId?: string): Promise<User[]> {
     const where: Record<string, unknown> = {};
     if (schoolId) where.schoolId = schoolId;
     if (role) where.role = role;
+    if (busId) where.busId = busId;
     return this.userRepository.findBy(where);
   }
 
@@ -64,15 +65,51 @@ export class UsersService {
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findOne(id);
-    if (updateUserDto.firstName || updateUserDto.lastName) {
-      const firstName = updateUserDto.firstName ?? user.firstName;
-      const lastName = updateUserDto.lastName ?? user.lastName;
-      if (!updateUserDto.name) {
-        updateUserDto.name = `${firstName} ${lastName}`;
+    const nextEmail =
+      typeof updateUserDto.email === 'string' && updateUserDto.email.trim()
+        ? updateUserDto.email.trim()
+        : user.email;
+    const nextPhone =
+      typeof updateUserDto.phone === 'string' && updateUserDto.phone.trim()
+        ? updateUserDto.phone.trim()
+        : user.phone;
+
+    if (nextEmail !== user.email) {
+      const existingEmail = await this.userRepository.findOneBy({ email: nextEmail });
+      if (existingEmail && existingEmail.id !== id) {
+        throw new ConflictException('Email is already in use');
       }
     }
-    Object.assign(user, updateUserDto);
-    return this.userRepository.save(user);
+
+    if (nextPhone && nextPhone !== user.phone) {
+      const existingPhone = await this.userRepository.findOneBy({ phone: nextPhone });
+      if (existingPhone && existingPhone.id !== id) {
+        throw new ConflictException('Phone number is already in use');
+      }
+    }
+
+    const nextFirstName = updateUserDto.firstName?.trim() ?? user.firstName;
+    const nextLastName = updateUserDto.lastName?.trim() ?? user.lastName;
+
+    Object.assign(user, updateUserDto, {
+      email: nextEmail,
+      phone: nextPhone,
+      firstName: nextFirstName,
+      lastName: nextLastName,
+      name: updateUserDto.name?.trim() || `${nextFirstName} ${nextLastName}`.trim(),
+    });
+
+    try {
+      return await this.userRepository.save(user);
+    } catch (error) {
+      if (error instanceof QueryFailedError) {
+        const code = (error as { code?: string }).code;
+        if (code === '23505') {
+          throw new ConflictException('Email or phone number is already in use');
+        }
+      }
+      throw error;
+    }
   }
 
   async remove(id: string): Promise<void> {

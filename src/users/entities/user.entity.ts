@@ -35,6 +35,10 @@ export class User {
   @Column({ unique: true })
   email: string;
 
+  /** Bcrypt hash for email/password login; when null, password defaults to `phone` (legacy). */
+  @Column({ name: 'password_hash', type: 'varchar', nullable: true, select: false })
+  passwordHash: string | null;
+
   // Populated on first Firebase sign-in; null for users created by admin
   // before they authenticate via Firebase.
   @Column({ name: 'firebase_uid', type: 'varchar', nullable: true, unique: true })
@@ -63,6 +67,13 @@ export class User {
 
   @Column({ type: 'timestamptz', nullable: true })
   subExpiry: Date;
+
+  // Parent home location for distance / ETA calculation
+  @Column({ type: 'float', nullable: true })
+  homeLat: number;
+
+  @Column({ type: 'float', nullable: true })
+  homeLng: number;
 
   @Column({ nullable: true })
   fcmToken: string;

@@ -1,11 +1,11 @@
 import {
   Injectable,
   NotFoundException,
-  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusDriver } from './entities/bus-driver.entity';
+import { Bus } from '../buses/entities/bus.entity';
 import { CreateBusDriverDto } from './dto/create-bus-driver.dto';
 import { UpdateBusDriverDto } from './dto/update-bus-driver.dto';
 
@@ -14,22 +14,34 @@ export class BusDriversService {
   constructor(
     @InjectRepository(BusDriver)
     private readonly busDriverRepository: Repository<BusDriver>,
+    @InjectRepository(Bus)
+    private readonly busRepository: Repository<Bus>,
   ) {}
 
   async assign(createBusDriverDto: CreateBusDriverDto): Promise<BusDriver> {
-    // Ensure bus doesn't already have an active driver
+    // If the bus already has an active driver, unassign them first
     const activeAssignment = await this.busDriverRepository.findOneBy({
       busId: createBusDriverDto.busId,
       isActive: true,
     });
     if (activeAssignment) {
-      throw new ConflictException(
-        'This bus already has an active driver. Unassign the current driver first.',
-      );
+      activeAssignment.isActive = false;
+      activeAssignment.unassignedAt = new Date();
+      await this.busDriverRepository.save(activeAssignment);
     }
 
     const assignment = this.busDriverRepository.create(createBusDriverDto);
-    return this.busDriverRepository.save(assignment);
+    const saved = await this.busDriverRepository.save(assignment);
+
+    // Keep denormalized bus.driverId in sync (use QueryBuilder for reliable column mapping)
+    await this.busRepository
+      .createQueryBuilder()
+      .update()
+      .set({ driverId: createBusDriverDto.driverId })
+      .where('id = :id', { id: createBusDriverDto.busId })
+      .execute();
+
+    return saved;
   }
 
   // Unassign the current active driver from a bus
@@ -43,7 +55,17 @@ export class BusDriversService {
     }
     assignment.isActive = false;
     assignment.unassignedAt = new Date();
-    return this.busDriverRepository.save(assignment);
+    const saved = await this.busDriverRepository.save(assignment);
+
+    // Clear denormalized bus.driverId (use QueryBuilder for reliable column mapping)
+    await this.busRepository
+      .createQueryBuilder()
+      .update()
+      .set({ driverId: null as any })
+      .where('id = :id', { id: busId })
+      .execute();
+
+    return saved;
   }
 
   // Get the current active driver for a bus

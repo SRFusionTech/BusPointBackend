@@ -1,3 +1,5 @@
+import * as bcrypt from 'bcrypt';
+import * as https from 'https';
 import {
   Injectable,
   UnauthorizedException,
@@ -7,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { User, UserRole } from '../users/entities/user.entity';
 import { School } from '../schools/entities/school.entity';
 import { FirebaseService } from '../firebase/firebase.service';
@@ -14,9 +17,13 @@ import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { LoginDto } from './dto/login.dto';
 import { OnboardingSchoolDto } from './dto/onboarding.dto';
 
+interface OtpRecord { otp: string; expiresAt: number; }
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  /** In-memory OTP store: phone → { otp, expiresAt } */
+  private readonly otpStore = new Map<string, OtpRecord>();
 
   constructor(
     @InjectRepository(User)
@@ -25,6 +32,7 @@ export class AuthService {
     private readonly schoolRepository: Repository<School>,
     private readonly firebaseService: FirebaseService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
   private issueToken(user: User): string {
@@ -33,6 +41,14 @@ export class AuthService {
       role: user.role,
       phone: user.phone,
     });
+  }
+
+  /** Never expose password hash in API responses. */
+  private userWithoutSecrets(user: User): User {
+    const { passwordHash: _h, ...rest } = user as User & {
+      passwordHash?: string | null;
+    };
+    return rest as User;
   }
 
   private async buildAuthResponse(user: User, extra: Record<string, any> = {}) {
@@ -48,7 +64,7 @@ export class AuthService {
 
     return {
       access_token: this.issueToken(user),
-      user,
+      user: this.userWithoutSecrets(user),
       school,
       needs_onboarding,
       ...extra,
@@ -99,19 +115,22 @@ export class AuthService {
         this.logger.log(`Linked firebase_uid to existing user (id=${user.id})`);
       } else {
         is_new_user = true;
+        // Phone-auth tokens have phone_number but no email → new parent/driver.
+        // Email/Google tokens → likely a new school admin.
+        const isPhoneAuth = !!decodedToken.phone_number && !decodedToken.email;
         user = this.userRepository.create({
           firebaseUid: uid,
           email,
           firstName,
           lastName,
           name: displayName || `${firstName} ${lastName}`,
-          role: UserRole.ADMIN,
-          phone: null,
+          role: isPhoneAuth ? UserRole.PARENT : UserRole.ADMIN,
+          phone: firebasePhone ?? null,
           profilePicture: picture ?? undefined,
           fcmToken: dto.fcmToken,
         });
         user = await this.userRepository.save(user);
-        this.logger.log(`New user created from Firebase (uid=${uid})`);
+        this.logger.log(`New user created from Firebase (uid=${uid}, role=${user.role})`);
       }
     } else {
       let changed = false;
@@ -131,26 +150,124 @@ export class AuthService {
     return this.buildAuthResponse(user, { is_new_user });
   }
 
+  /** Send a random HTTP GET/POST via Node https and return the body as a string. */
+  private httpsPost(url: string, payload: string, headers: Record<string, string>): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const parsed = new URL(url);
+      const options = {
+        hostname: parsed.hostname,
+        path: parsed.pathname + parsed.search,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), ...headers },
+      };
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => resolve(body));
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  /** Send OTP SMS via Fast2SMS (falls back to console log when no API key). */
+  private async sendSmsFast2Sms(phone: string, otp: string): Promise<void> {
+    const apiKey = this.configService.get<string>('FAST2SMS_API_KEY') || process.env.FAST2SMS_API_KEY;
+    if (!apiKey) {
+      this.logger.warn(`[OTP] No FAST2SMS_API_KEY set — OTP for ${phone}: ${otp}`);
+      return;
+    }
+    const payload = JSON.stringify({
+      route: 'otp',
+      variables_values: otp,
+      numbers: phone,
+    });
+    try {
+      const body = await this.httpsPost(
+        'https://www.fast2sms.com/dev/bulkV2',
+        payload,
+        { authorization: apiKey },
+      );
+      this.logger.log(`Fast2SMS response for ${phone}: ${body}`);
+
+      // Fast2SMS may return HTTP 200 with a failure payload (e.g. status_code 996)
+      // when account verification is incomplete.
+      try {
+        const parsed = JSON.parse(body) as { status_code?: number; message?: string };
+        if (typeof parsed.status_code === 'number' && parsed.status_code !== 200) {
+          throw new BadRequestException(
+            parsed.message || 'Could not send OTP. Try again later.',
+          );
+        }
+      } catch (parseOrValidationError) {
+        if (parseOrValidationError instanceof BadRequestException) {
+          throw parseOrValidationError;
+        }
+        // Ignore non-JSON bodies and treat as provider-accepted response.
+      }
+    } catch (err) {
+      this.logger.error(`Fast2SMS send failed for ${phone}`, err);
+      throw new BadRequestException('Could not send OTP. Try again later.');
+    }
+  }
+
   /**
    * POST /auth/send-otp?phone=
-   * Firebase handles the actual OTP delivery; this is a passthrough stub.
+   * Generates a 6-digit OTP, stores it for 10 minutes, and sends via SMS.
    */
   async sendOtp(phone: string) {
     const normalizedPhone = phone.replace(/^\+91/, '').replace(/\D/g, '');
+    if (!/^\d{10}$/.test(normalizedPhone)) {
+      throw new BadRequestException('Invalid phone number. Must be 10 digits.');
+    }
+
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    this.otpStore.set(normalizedPhone, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
+
+    const hasSmsKey = !!(this.configService.get<string>('FAST2SMS_API_KEY') || process.env.FAST2SMS_API_KEY);
+    let smsFailed = false;
+    try {
+      await this.sendSmsFast2Sms(normalizedPhone, otp);
+    } catch (err) {
+      smsFailed = true;
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
+      this.logger.warn(`[OTP] SMS delivery failed for ${normalizedPhone}; using dev_otp fallback in non-production.`);
+    }
+
     const user = await this.userRepository.findOneBy({ phone: normalizedPhone });
     return {
       success: true,
       user_exists: !!user,
+      // Expose OTP in non-production when SMS provider is unavailable or failed.
+      ...(process.env.NODE_ENV !== 'production' && (!hasSmsKey || smsFailed) ? { dev_otp: otp } : {}),
     };
   }
 
   /**
    * POST /auth/verify-otp?phone=&otp=
-   * Firebase already verified the OTP client-side; here we just look up/create
-   * the user and issue a JWT — same flow as loginWithFirebase but phone-only.
+   * Verifies the OTP, then looks up / creates the user and issues a JWT.
    */
-  async verifyOtp(phone: string) {
+  async verifyOtp(phone: string, otp: string) {
     const normalizedPhone = phone.replace(/^\+91/, '').replace(/\D/g, '');
+    const record = this.otpStore.get(normalizedPhone);
+
+    if (!record) {
+      throw new UnauthorizedException('No OTP was sent to this number. Request a new one.');
+    }
+    if (Date.now() > record.expiresAt) {
+      this.otpStore.delete(normalizedPhone);
+      throw new UnauthorizedException('OTP has expired. Request a new one.');
+    }
+    if (record.otp !== otp) {
+      throw new UnauthorizedException('Incorrect OTP.');
+    }
+
+    // OTP is valid — consume it
+    this.otpStore.delete(normalizedPhone);
+
     let user = await this.userRepository.findOneBy({ phone: normalizedPhone });
     let is_new_user = false;
 
@@ -174,7 +291,12 @@ export class AuthService {
     let user: User | null = null;
 
     if (dto.email) {
-      user = await this.userRepository.findOneBy({ email: dto.email.toLowerCase() });
+      const email = dto.email.toLowerCase();
+      user = await this.userRepository
+        .createQueryBuilder('user')
+        .addSelect('user.passwordHash')
+        .where('LOWER(user.email) = :email', { email })
+        .getOne();
     } else if (dto.phone) {
       const normalizedPhone = dto.phone.replace(/\D/g, '');
       user = await this.userRepository.findOneBy({ phone: normalizedPhone });
@@ -184,8 +306,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Default password is the user's phone number
-    if (dto.password !== user.phone) {
+    if (user.passwordHash) {
+      const ok = await bcrypt.compare(dto.password, user.passwordHash);
+      if (!ok) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+    } else if (dto.password !== user.phone) {
       throw new UnauthorizedException('Invalid credentials');
     }
 

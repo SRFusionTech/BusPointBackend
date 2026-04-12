@@ -12,6 +12,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 
 @Module({
   imports: [
+    ConfigModule,
     TypeOrmModule.forFeature([User, School]),
     PassportModule,
     JwtModule.registerAsync({

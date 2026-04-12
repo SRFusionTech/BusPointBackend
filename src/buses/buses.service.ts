@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Bus, BusStatus } from './entities/bus.entity';
+import { User } from '../users/entities/user.entity';
 import { CreateBusDto } from './dto/create-bus.dto';
 import { UpdateBusDto } from './dto/update-bus.dto';
 
@@ -14,6 +15,8 @@ export class BusesService {
   constructor(
     @InjectRepository(Bus)
     private readonly busRepository: Repository<Bus>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   async create(createBusDto: CreateBusDto): Promise<Bus> {
@@ -73,6 +76,19 @@ export class BusesService {
     bus.iconId = iconId;
     bus.iconUrl = iconUrl;
     return this.busRepository.save(bus);
+  }
+
+  async getWithDriver(id: string): Promise<{ bus: Bus; driver: Omit<User, 'passwordHash'> | null }> {
+    const bus = await this.findOne(id);
+    let driver: Omit<User, 'passwordHash'> | null = null;
+    if (bus.driverId) {
+      const u = await this.userRepository.findOneBy({ id: bus.driverId });
+      if (u) {
+        const { passwordHash: _p, ...safe } = u as User & { passwordHash?: string };
+        driver = safe as Omit<User, 'passwordHash'>;
+      }
+    }
+    return { bus, driver };
   }
 
   async remove(id: string): Promise<void> {

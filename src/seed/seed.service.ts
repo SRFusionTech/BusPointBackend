@@ -1,3 +1,4 @@
+import * as bcrypt from 'bcrypt';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -149,6 +150,94 @@ export class SeedService {
       childName: 'Kavya Gupta',
     });
 
+    // Email/password test account (password is not the phone)
+    const testEmail = 'testing@gmail.com';
+    const testPasswordHash = await bcrypt.hash('Testing@12', 10);
+    const existingTest = await this.userRepository.findOneBy({ email: testEmail });
+    if (!existingTest) {
+      await this.userRepository.save(
+        this.userRepository.create({
+          email: testEmail,
+          firstName: 'Test',
+          lastName: 'User',
+          name: 'Test User',
+          phone: null,
+          role: UserRole.PARENT,
+          schoolId: school.id,
+          busId: bus1.id,
+          childName: 'Demo Child',
+          passwordHash: testPasswordHash,
+        }),
+      );
+      this.logger.log(`Test user created: ${testEmail}`);
+    } else {
+      await this.userRepository.update(existingTest.id, {
+        passwordHash: testPasswordHash,
+      });
+      this.logger.log(`Test user password refreshed: ${testEmail}`);
+    }
+
+    // Role-based test accounts: <role>@gmail.com / <role>@12
+    const roleTestAccounts: Array<{
+      email: string;
+      password: string;
+      firstName: string;
+      lastName: string;
+      role: UserRole;
+      busId?: string;
+      childName?: string;
+    }> = [
+      {
+        email: 'parent@gmail.com',
+        password: 'parent@12',
+        firstName: 'Parent',
+        lastName: 'Test',
+        role: UserRole.PARENT,
+        busId: bus1.id,
+        childName: 'Test Child',
+      },
+      {
+        email: 'admin@gmail.com',
+        password: 'admin@12',
+        firstName: 'Admin',
+        lastName: 'Test',
+        role: UserRole.ADMIN,
+      },
+      {
+        email: 'driver@gmail.com',
+        password: 'driver@12',
+        firstName: 'Driver',
+        lastName: 'Test',
+        role: UserRole.DRIVER,
+        busId: bus1.id,
+      },
+    ];
+
+    for (const acc of roleTestAccounts) {
+      const hash = await bcrypt.hash(acc.password, 10);
+      const existing = await this.userRepository.findOneBy({ email: acc.email });
+      if (!existing) {
+        await this.userRepository.save(
+          this.userRepository.create({
+            email: acc.email,
+            firstName: acc.firstName,
+            lastName: acc.lastName,
+            name: `${acc.firstName} ${acc.lastName}`,
+            phone: null,
+            role: acc.role,
+            schoolId: school.id,
+            busId: acc.busId,
+            childName: acc.childName,
+            passwordHash: hash,
+          }),
+        );
+        this.logger.log(`Role test account created: ${acc.email} (${acc.role})`);
+      } else {
+        await this.userRepository.update(existing.id, { passwordHash: hash });
+        this.logger.log(`Role test account password refreshed: ${acc.email}`);
+      }
+    }
+
     this.logger.log('Seed completed successfully');
 
     return {
@@ -163,7 +252,17 @@ export class SeedService {
         { plateNumber: bus2.plateNumber, route: bus2.routeName },
       ],
       parents: ['9444444444', '9555555555', '9666666666'],
-      note: 'Default password for all users is their phone number',
+      test_email_login: {
+        email: testEmail,
+        password: 'Testing@12',
+        role: 'parent',
+      },
+      role_test_accounts: [
+        { email: 'parent@gmail.com', password: 'parent@12', role: 'parent' },
+        { email: 'admin@gmail.com',  password: 'admin@12',  role: 'admin' },
+        { email: 'driver@gmail.com', password: 'driver@12', role: 'driver' },
+      ],
+      note: 'Default password for phone-only users is their phone number; test accounts use email + password above',
     };
   }
 }

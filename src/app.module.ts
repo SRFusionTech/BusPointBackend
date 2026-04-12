@@ -23,6 +23,7 @@ import { AuthModule } from './auth/auth.module';
 import { SeedModule } from './seed/seed.module';
 import { BusIconsModule } from './bus-icons/bus-icons.module';
 import { TrackingModule } from './tracking/tracking.module';
+import { SuperAdminModule } from './super-admin/super-admin.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 
 @Module({
@@ -31,6 +32,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
       isGlobal: true,
       load: [postgresConfig, mongoConfig, jwtConfig],
       envFilePath: '.env',
+      expandVariables: false,
     }),
     PostgresModule,
     MongoModule,
@@ -50,6 +52,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
     SeedModule,
     BusIconsModule,
     TrackingModule,
+    SuperAdminModule,
   ],
   controllers: [AppController],
   providers: [

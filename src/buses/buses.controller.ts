@@ -45,6 +45,12 @@ export class BusesController {
     return this.busesService.findBySchool(schoolId);
   }
 
+  // GET /api/buses/:id/with-driver
+  @Get(':id/with-driver')
+  getWithDriver(@Param('id', ParseUUIDPipe) id: string) {
+    return this.busesService.getWithDriver(id);
+  }
+
   // GET /api/buses/:id
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {

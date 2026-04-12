@@ -33,8 +33,8 @@ export class AuthController {
   // POST /api/auth/verify-otp?phone=&otp=
   @Public()
   @Post('verify-otp')
-  verifyOtp(@Query('phone') phone: string) {
-    return this.authService.verifyOtp(phone);
+  verifyOtp(@Query('phone') phone: string, @Query('otp') otp: string) {
+    return this.authService.verifyOtp(phone, otp);
   }
 
   // POST /api/auth/onboarding/school  (requires valid JWT — admin only)
