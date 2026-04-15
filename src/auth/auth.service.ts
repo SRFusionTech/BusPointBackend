@@ -36,17 +36,11 @@ export class AuthService {
   ) {}
 
   private issueToken(user: User): string {
-    const expiresIn = this.configService.get<string>('jwt.expiresIn') ?? '7d';
-    return this.jwtService.sign(
-      {
-        sub: user.id,
-        role: user.role,
-        phone: user.phone,
-      },
-      {
-        expiresIn,
-      },
-    );
+    return this.jwtService.sign({
+      sub: user.id,
+      role: user.role,
+      phone: user.phone,
+    });
   }
 
   /** Never expose password hash in API responses. */
