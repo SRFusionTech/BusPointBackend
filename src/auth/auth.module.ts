@@ -20,7 +20,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('jwt.secret') as string,
-        // No expiresIn — token is valid until the user explicitly logs out
+        expiresIn: config.get<string>('jwt.expiresIn') ?? '7d',
       }),
     }),
   ],

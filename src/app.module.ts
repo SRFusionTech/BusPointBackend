@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
@@ -25,6 +25,7 @@ import { BusIconsModule } from './bus-icons/bus-icons.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { SuperAdminModule } from './super-admin/super-admin.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { NormalizeRequestBodyMiddleware } from './common/middleware/normalize-request-body.middleware';
 
 @Module({
   imports: [
@@ -62,4 +63,8 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(NormalizeRequestBodyMiddleware).forRoutes('*');
+  }
+}

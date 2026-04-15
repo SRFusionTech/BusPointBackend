@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Body, Param, Query } from '@nestjs/commo
 import { SubscriptionsService } from './subscriptions.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { SubscriptionStatus } from './entities/subscription.entity';
+import { QueryAlias } from '../common/decorators/query-alias.decorator';
 
 @Controller('subscriptions')
 export class SubscriptionsController {
@@ -16,7 +17,7 @@ export class SubscriptionsController {
   // GET /api/subscriptions?school_id=xxx&status=active
   @Get()
   findAll(
-    @Query('school_id') schoolId?: string,
+    @QueryAlias('schoolId', 'school_id') schoolId?: string,
     @Query('status') status?: SubscriptionStatus,
   ) {
     return this.subscriptionsService.findAll(schoolId, status);
@@ -38,7 +39,7 @@ export class SubscriptionsController {
   @Post('parent/:parentId/activate')
   activateForParent(
     @Param('parentId') parentId: string,
-    @Query('school_id') schoolId: string,
+    @QueryAlias('schoolId', 'school_id') schoolId: string,
   ) {
     return this.subscriptionsService.activateForParent(parentId, schoolId);
   }

@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusDriver } from './entities/bus-driver.entity';
 import { Bus } from '../buses/entities/bus.entity';
+import { User } from '../users/entities/user.entity';
 import { CreateBusDriverDto } from './dto/create-bus-driver.dto';
 import { UpdateBusDriverDto } from './dto/update-bus-driver.dto';
 
@@ -16,6 +17,8 @@ export class BusDriversService {
     private readonly busDriverRepository: Repository<BusDriver>,
     @InjectRepository(Bus)
     private readonly busRepository: Repository<Bus>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   async assign(createBusDriverDto: CreateBusDriverDto): Promise<BusDriver> {
@@ -28,6 +31,13 @@ export class BusDriversService {
       activeAssignment.isActive = false;
       activeAssignment.unassignedAt = new Date();
       await this.busDriverRepository.save(activeAssignment);
+
+      await this.userRepository
+        .createQueryBuilder()
+        .update()
+        .set({ busId: null as any })
+        .where('id = :id', { id: activeAssignment.driverId })
+        .execute();
     }
 
     const assignment = this.busDriverRepository.create(createBusDriverDto);
@@ -39,6 +49,13 @@ export class BusDriversService {
       .update()
       .set({ driverId: createBusDriverDto.driverId })
       .where('id = :id', { id: createBusDriverDto.busId })
+      .execute();
+
+    await this.userRepository
+      .createQueryBuilder()
+      .update()
+      .set({ busId: createBusDriverDto.busId })
+      .where('id = :id', { id: createBusDriverDto.driverId })
       .execute();
 
     return saved;
@@ -63,6 +80,13 @@ export class BusDriversService {
       .update()
       .set({ driverId: null as any })
       .where('id = :id', { id: busId })
+      .execute();
+
+    await this.userRepository
+      .createQueryBuilder()
+      .update()
+      .set({ busId: null as any })
+      .where('id = :id', { id: assignment.driverId })
       .execute();
 
     return saved;

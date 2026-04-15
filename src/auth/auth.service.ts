@@ -36,11 +36,16 @@ export class AuthService {
   ) {}
 
   private issueToken(user: User): string {
-    return this.jwtService.sign({
-      sub: user.id,
-      role: user.role,
-      phone: user.phone,
-    });
+    return this.jwtService.sign(
+      {
+        sub: user.id,
+        role: user.role,
+        phone: user.phone,
+      },
+      {
+        expiresIn: this.configService.get<string>('jwt.expiresIn') ?? '7d',
+      },
+    );
   }
 
   /** Never expose password hash in API responses. */

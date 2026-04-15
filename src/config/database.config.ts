@@ -1,8 +1,13 @@
 import { registerAs } from '@nestjs/config';
 
+function parsePort(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export const postgresConfig = registerAs('postgres', () => ({
   host: process.env.POSTGRES_HOST || 'localhost',
-  port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+  port: parsePort(process.env.POSTGRES_PORT, 5432),
   username: process.env.POSTGRES_USER || 'postgres',
   password: process.env.POSTGRES_PASSWORD || 'postgres',
   database: process.env.POSTGRES_DB || 'buspoint',

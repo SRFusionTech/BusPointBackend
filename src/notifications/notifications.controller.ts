@@ -13,6 +13,7 @@ import {
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationStatus } from './schemas/notification.schema';
+import { QueryAlias } from '../common/decorators/query-alias.decorator';
 
 @Controller('notifications')
 export class NotificationsController {
@@ -42,8 +43,8 @@ export class NotificationsController {
   // GET /api/notifications?bus_id=xxx&school_id=xxx&limit=50
   @Get()
   findAll(
-    @Query('bus_id') busId?: string,
-    @Query('school_id') schoolId?: string,
+    @QueryAlias('busId', 'bus_id') busId?: string,
+    @QueryAlias('schoolId', 'school_id') schoolId?: string,
     @Query('limit') limit?: number,
   ) {
     return this.notificationsService.findAll(busId, schoolId, limit);

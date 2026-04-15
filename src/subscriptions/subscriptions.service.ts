@@ -20,8 +20,8 @@ export class SubscriptionsService {
     expiryDate.setMonth(expiryDate.getMonth() + 1);
 
     const subscription = this.subscriptionRepository.create({
-      parentId: dto.parent_id,
-      schoolId: dto.school_id,
+      parentId: dto.parentId,
+      schoolId: dto.schoolId,
       status: SubscriptionStatus.ACTIVE,
       startDate,
       expiryDate,
@@ -30,7 +30,7 @@ export class SubscriptionsService {
     const saved = await this.subscriptionRepository.save(subscription);
 
     // Sync sub status on user record for fast reads
-    await this.userRepository.update(dto.parent_id, {
+    await this.userRepository.update(dto.parentId, {
       subStatus: 'active',
       subExpiry: expiryDate,
     });
@@ -73,7 +73,7 @@ export class SubscriptionsService {
 
   // Admin: manually activate a subscription for a parent (renew for 30 days)
   async activateForParent(parentId: string, schoolId: string): Promise<Subscription> {
-    return this.create({ parent_id: parentId, school_id: schoolId });
+    return this.create({ parentId, schoolId });
   }
 
   // Admin: revoke all active subscriptions for a parent

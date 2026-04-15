@@ -10,13 +10,25 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
+      forbidUnknownValues: true,
       transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
 
   app.useGlobalInterceptors(new SnakeCaseInterceptor());
 
-  app.enableCors();
+  const rawCorsOrigins = process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN;
+  const corsOrigin = rawCorsOrigins
+    ? rawCorsOrigins.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : true;
+
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: true,
+  });
   app.setGlobalPrefix('api');
 
   const port = process.env.PORT ?? 3000;
