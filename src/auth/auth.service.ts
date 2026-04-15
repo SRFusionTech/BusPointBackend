@@ -36,6 +36,7 @@ export class AuthService {
   ) {}
 
   private issueToken(user: User): string {
+    const expiresIn = this.configService.get<string>('jwt.expiresIn') ?? '7d';
     return this.jwtService.sign(
       {
         sub: user.id,
@@ -43,7 +44,7 @@ export class AuthService {
         phone: user.phone,
       },
       {
-        expiresIn: this.configService.get<string>('jwt.expiresIn') ?? '7d',
+        expiresIn,
       },
     );
   }
