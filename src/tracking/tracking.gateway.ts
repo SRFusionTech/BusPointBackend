@@ -50,6 +50,10 @@ interface ParentLocationSnapshot {
   latitude: number;
   longitude: number;
   distanceMeters?: number;
+  /** true when coords came from a live `parent_location_update`; absent/false for saved home coords. */
+  isLive?: boolean;
+  /** epoch ms of the most recent live emit; only set when `isLive` is true. */
+  liveUpdatedAt?: number;
 }
 
 // ─── GPS heartbeat constants ──────────────────────────────────────────────────
@@ -195,6 +199,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
         childName: live.childName,
         latitude: live.latitude,
         longitude: live.longitude,
+        isLive: true,
+        liveUpdatedAt: live.updatedAt,
       });
     }
 

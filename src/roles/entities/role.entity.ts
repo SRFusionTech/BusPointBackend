@@ -12,12 +12,14 @@ export enum RoleName {
   PARENT = 'PARENT',
 }
 
+const _useVarcharEnum = process.env.FIRESTORE === 'true';
+
 @Entity('roles')
 export class Role {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'enum', enum: RoleName, unique: true })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: RoleName, unique: true })
   name: RoleName;
 
   @Column({ type: 'text', nullable: true })

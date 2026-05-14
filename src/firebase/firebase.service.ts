@@ -10,6 +10,30 @@ export class FirebaseService implements OnModuleInit {
 
   onModuleInit() {
     if (admin.apps.length === 0) {
+      const credPath = this.configService.get<string>(
+        'GOOGLE_APPLICATION_CREDENTIALS',
+      );
+
+      if (credPath) {
+        try {
+          // require the JSON credentials file (resolve relative paths)
+          const path = require('path');
+          const full = path.isAbsolute(credPath)
+            ? credPath
+            : path.resolve(process.cwd(), credPath);
+          const svc = require(full);
+          admin.initializeApp({ credential: admin.credential.cert(svc) });
+          this.logger.log(
+            `Firebase Admin SDK initialized using ${credPath}`,
+          );
+          return;
+        } catch (err) {
+          this.logger.warn(
+            `Failed to load GOOGLE_APPLICATION_CREDENTIALS (${credPath}): ${err.message}`,
+          );
+        }
+      }
+
       const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
       const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
       const privateKey = this.configService

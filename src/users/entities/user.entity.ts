@@ -18,6 +18,9 @@ export enum UserRole {
   PARENT = 'parent',
 }
 
+const _useVarcharEnum = process.env.FIRESTORE === 'true';
+const _useSqlite = process.env.FIRESTORE === 'true';
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -50,7 +53,7 @@ export class User {
   @Column({ name: 'mobile_number', type: 'varchar', unique: true, nullable: true })
   phone: string | null;
 
-  @Column({ type: 'enum', enum: UserRole, default: UserRole.PARENT })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: UserRole, default: UserRole.PARENT })
   role: UserRole;
 
   @Column({ nullable: true })
@@ -65,7 +68,7 @@ export class User {
   @Column({ nullable: true })
   subStatus: string;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: _useSqlite ? 'datetime' : 'timestamptz', nullable: true })
   subExpiry: Date;
 
   // Parent home location for distance / ETA calculation
@@ -81,7 +84,7 @@ export class User {
   @Column({ nullable: true })
   dateOfBirth: Date;
 
-  @Column({ type: 'enum', enum: Gender, nullable: true })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: Gender, nullable: true })
   gender: Gender;
 
   @Column({ nullable: true })

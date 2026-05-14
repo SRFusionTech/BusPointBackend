@@ -10,6 +10,8 @@ import {
 import { Bus } from '../../buses/entities/bus.entity';
 import { User } from '../../users/entities/user.entity';
 
+const _useSqlite = process.env.FIRESTORE === 'true';
+
 @Entity('bus_drivers')
 export class BusDriver {
   @PrimaryGeneratedColumn('uuid')
@@ -30,11 +32,11 @@ export class BusDriver {
   driverId: string;
 
   // When the driver was assigned to this bus
-  @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ type: _useSqlite ? 'datetime' : 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   assignedAt: Date;
 
   // Null means currently active assignment
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: _useSqlite ? 'datetime' : 'timestamptz', nullable: true })
   unassignedAt: Date;
 
   // Only one record should be active per bus at a time

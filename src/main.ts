@@ -1,7 +1,8 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { SnakeCaseInterceptor } from './common/interceptors/snake-case.interceptor';
+import { SeedService } from './seed/seed.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -34,5 +35,16 @@ async function bootstrap() {
   const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');
   console.log(`Application running on: http://localhost:${port}/api (LAN: http://0.0.0.0:${port}/api)`);
+
+  // In-memory SQLite (FIRESTORE=true) wipes on every restart — auto-seed so dev
+  // logins keep working without manual `curl /api/seed` after every reload.
+  if (process.env.FIRESTORE === 'true') {
+    try {
+      await app.get(SeedService).seed();
+      Logger.log('Auto-seeded in-memory database', 'Bootstrap');
+    } catch (err) {
+      Logger.error('Auto-seed failed', err as Error, 'Bootstrap');
+    }
+  }
 }
 bootstrap();

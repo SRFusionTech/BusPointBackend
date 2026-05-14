@@ -13,6 +13,8 @@ export enum IconCategory {
   CUSTOM = 'custom',
 }
 
+const _useVarcharEnum = process.env.FIRESTORE === 'true';
+
 @Entity('bus_icons')
 export class BusIcon {
   @PrimaryGeneratedColumn('uuid')
@@ -25,7 +27,7 @@ export class BusIcon {
   @Column()
   url: string;
 
-  @Column({ type: 'enum', enum: IconCategory, default: IconCategory.STANDARD })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: IconCategory, default: IconCategory.STANDARD })
   category: IconCategory;
 
   @Column({ default: true })

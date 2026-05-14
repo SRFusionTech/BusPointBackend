@@ -6,6 +6,8 @@ export enum RequestStatus {
   REJECTED  = 'rejected',
 }
 
+const _useVarcharEnum = process.env.FIRESTORE === 'true';
+
 @Entity('access_requests')
 export class AccessRequest {
   @PrimaryGeneratedColumn('uuid')
@@ -23,7 +25,7 @@ export class AccessRequest {
   @Column({ nullable: true })
   plan: string;
 
-  @Column({ type: 'enum', enum: RequestStatus, default: RequestStatus.PENDING })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: RequestStatus, default: RequestStatus.PENDING })
   status: RequestStatus;
 
   @Column({ nullable: true })

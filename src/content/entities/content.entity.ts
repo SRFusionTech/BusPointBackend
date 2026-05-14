@@ -23,6 +23,9 @@ export enum ContentType {
   VIDEO = 'VIDEO',
 }
 
+const _useVarcharEnum = process.env.FIRESTORE === 'true';
+const _useSqlite = process.env.FIRESTORE === 'true';
+
 @Entity('content')
 @Index(['entityType', 'entityId'])
 @Index(['entityType', 'entityId', 'contentType'])
@@ -31,7 +34,7 @@ export class Content {
   id: string;
 
   // What kind of entity owns this file
-  @Column({ type: 'enum', enum: EntityType })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: EntityType })
   entityType: EntityType;
 
   // The UUID of the owning entity (user id, school id, bus id, etc.)
@@ -39,7 +42,7 @@ export class Content {
   entityId: string;
 
   // What kind of content this is
-  @Column({ type: 'enum', enum: ContentType })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: ContentType })
   contentType: ContentType;
 
   // Publicly accessible URL (e.g. S3, Firebase Storage, Cloudinary)
@@ -57,7 +60,7 @@ export class Content {
   fileSize: number;
 
   // Any extra info: dimensions, duration, storage key, CDN path, etc.
-  @Column({ type: 'jsonb', default: {} })
+  @Column({ type: _useSqlite ? 'simple-json' : 'jsonb', default: _useSqlite ? null : {}, nullable: _useSqlite })
   metadata: Record<string, any>;
 
   @Column({ default: true })

@@ -16,6 +16,9 @@ export enum SubscriptionStatus {
   CANCELLED = 'cancelled',
 }
 
+const _useVarcharEnum = process.env.FIRESTORE === 'true';
+const _useSqlite = process.env.FIRESTORE === 'true';
+
 @Entity('subscriptions')
 export class Subscription {
   @PrimaryGeneratedColumn('uuid')
@@ -35,13 +38,13 @@ export class Subscription {
   @Column()
   schoolId: string;
 
-  @Column({ type: 'enum', enum: SubscriptionStatus, default: SubscriptionStatus.ACTIVE })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: SubscriptionStatus, default: SubscriptionStatus.ACTIVE })
   status: SubscriptionStatus;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: _useSqlite ? 'datetime' : 'timestamptz' })
   startDate: Date;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: _useSqlite ? 'datetime' : 'timestamptz' })
   expiryDate: Date;
 
   @CreateDateColumn()

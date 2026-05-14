@@ -20,6 +20,10 @@ export enum BusStatus {
   MAINTENANCE = 'maintenance',
 }
 
+const _useVarcharEnum = process.env.FIRESTORE === 'true';
+
+const _useSqlite = process.env.FIRESTORE === 'true';
+
 @Entity('buses')
 export class Bus {
   @PrimaryGeneratedColumn('uuid')
@@ -42,7 +46,7 @@ export class Bus {
   @Column({ nullable: true })
   driverId: string;
 
-  @Column({ type: 'enum', enum: BusStatus, default: BusStatus.IDLE })
+  @Column({ type: _useVarcharEnum ? 'varchar' : 'enum', enum: BusStatus, default: BusStatus.IDLE })
   status: BusStatus;
 
   // Live GPS location
@@ -52,7 +56,7 @@ export class Bus {
   @Column({ type: 'float', nullable: true })
   lastLng: number;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: _useSqlite ? 'datetime' : 'timestamptz', nullable: true })
   lastUpdated: Date;
 
   @Column({ type: 'int', nullable: true })

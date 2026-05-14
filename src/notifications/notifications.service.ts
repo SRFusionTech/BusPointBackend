@@ -1,24 +1,79 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as admin from 'firebase-admin';
 import {
   Notification,
   NotificationDocument,
+  NotificationChannel,
   NotificationStatus,
+  NotificationType,
 } from './schemas/notification.schema';
 import { CreateNotificationDto } from './dto/create-notification.dto';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
+
+  private async createAndMarkSent(dto: CreateNotificationDto): Promise<NotificationDocument> {
+    const notification = new this.notificationModel({
+      ...dto,
+      status: NotificationStatus.SENT,
+      sentAt: new Date(),
+    });
+    return notification.save();
+  }
+
+  private buildDataPayload(data: Record<string, any> = {}): Record<string, string> {
+    const payload: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(data)) {
+      if (value == null) continue;
+      payload[key] = typeof value === 'string' ? value : JSON.stringify(value);
+    }
+
+    return payload;
+  }
+
+  private async sendPushToUsers(
+    users: User[],
+    title: string,
+    message: string,
+    data: Record<string, any> = {},
+  ): Promise<void> {
+    const tokens = users
+      .map((user) => user.fcmToken)
+      .filter((token): token is string => typeof token === 'string' && token.trim().length > 0);
+
+    if (tokens.length === 0) {
+      this.logger.debug(`No FCM tokens found for ${users.length} user(s); skipped push send`);
+      return;
+    }
+
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: { title, body: message },
+      data: this.buildDataPayload(data),
+    });
+
+    this.logger.log(
+      `Push notification sent: ${response.successCount}/${tokens.length} successful`,
+    );
+  }
 
   // Create and queue a notification
   async create(dto: CreateNotificationDto): Promise<NotificationDocument> {
-    const notification = new this.notificationModel(dto);
-    return notification.save();
+    return this.createAndMarkSent(dto);
   }
 
   // Send a bulk notification to multiple recipients
@@ -26,7 +81,12 @@ export class NotificationsService {
     recipientIds: string[],
     dto: Omit<CreateNotificationDto, 'recipientId'>,
   ): Promise<NotificationDocument[]> {
-    const docs = recipientIds.map((recipientId) => ({ ...dto, recipientId }));
+    const docs = recipientIds.map((recipientId) => ({
+      ...dto,
+      recipientId,
+      status: NotificationStatus.SENT,
+      sentAt: new Date(),
+    }));
     return this.notificationModel.insertMany(docs) as Promise<NotificationDocument[]>;
   }
 

@@ -7,6 +7,10 @@ dist/
 # Environment
 .env
 
+# Secrets / credentials
+firebase-service-account.json
+*-service-account.json
+
 # Logs
 *.log
 npm-debug.log*
