@@ -13,7 +13,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 # Fail fast if main.js wasn't produced — better than crashing at runtime.
-RUN echo "=== dist contents after build ===" && ls -la dist && test -f dist/main.js
+RUN test -f dist/main.js || (echo "dist/main.js missing after build — check tsconfig.build.json rootDir / excludes" && ls -la dist && exit 1)
 
 # ─── Stage 2: Production image ────────────────────────────────────────────────
 FROM node:22-alpine AS production
@@ -28,7 +28,6 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy compiled output from builder
 COPY --from=builder /app/dist ./dist
-RUN echo "=== dist contents in production image ===" && ls -la dist
 
 # Expose the NestJS port (must match PORT env var)
 EXPOSE 3000
