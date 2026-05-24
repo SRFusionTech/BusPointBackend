@@ -18,6 +18,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ContentModule } from './content/content.module';
 import { BusesModule } from './buses/buses.module';
 import { BusDriversModule } from './bus-drivers/bus-drivers.module';
+import { RoutesModule } from './routes/routes.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AdminModule } from './admin/admin.module';
@@ -49,6 +50,7 @@ const appImports = [
   ContentModule,
   BusesModule,
   BusDriversModule,
+  RoutesModule,
   SubscriptionsModule,
   DashboardModule,
   AdminModule,

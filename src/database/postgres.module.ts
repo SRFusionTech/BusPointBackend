@@ -24,7 +24,7 @@ const isFirestore = process.env.FIRESTORE === 'true';
             imports: [ConfigModule],
             inject: [ConfigService],
             useFactory: (config: ConfigService) => {
-              const databaseUrl = config.get<string>('DATABASE_URL');
+              const databaseUrl = process.env.DATABASE_URL || config.get<string>('DATABASE_URL');
 
               const base = {
                 type: 'postgres' as const,
@@ -40,11 +40,11 @@ const isFirestore = process.env.FIRESTORE === 'true';
 
               return {
                 ...base,
-                host: config.get<string>('postgres.host'),
-                port: config.get<number>('postgres.port'),
-                username: config.get<string>('postgres.username'),
-                password: config.get<string>('postgres.password'),
-                database: config.get<string>('postgres.database'),
+                host: process.env.POSTGRES_HOST || config.get<string>('postgres.host'),
+                port: Number(process.env.POSTGRES_PORT ?? config.get<number>('postgres.port')),
+                username: process.env.POSTGRES_USER || config.get<string>('postgres.username'),
+                password: process.env.POSTGRES_PASSWORD || config.get<string>('postgres.password'),
+                database: process.env.POSTGRES_DB || config.get<string>('postgres.database'),
               };
             },
           }),

@@ -23,6 +23,10 @@ export class CreateBusDto {
 
   @IsUUID()
   @IsOptional()
+  routeId?: string;
+
+  @IsUUID()
+  @IsOptional()
   driverId?: string;
 
   @IsEnum(BusStatus)

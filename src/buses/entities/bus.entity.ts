@@ -42,6 +42,11 @@ export class Bus {
   @Column()
   routeName: string;
 
+  // Link to the structured Route entity (with stops). Nullable so legacy buses
+  // keep working until an admin attaches a route through the wizard.
+  @Column({ nullable: true })
+  routeId: string;
+
   // Currently assigned driver (denormalized for fast lookup)
   @Column({ nullable: true })
   driverId: string;
