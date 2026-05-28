@@ -67,6 +67,11 @@ function resolveDatabaseUrl(config: ConfigService): string | undefined {
                 dropSchema,
                 logging: config.get<string>('NODE_ENV') === 'development',
                 ssl: databaseUrl ? { rejectUnauthorized: false } : false,
+                // Cap auth-failure retries so a bad password fails fast instead
+                // of hammering the Supabase pooler and tripping its circuit
+                // breaker (which then blocks even correct credentials).
+                retryAttempts: 3,
+                retryDelay: 5000,
               };
 
               if (config.get<string>('NODE_ENV') === 'production' && !databaseUrl) {
