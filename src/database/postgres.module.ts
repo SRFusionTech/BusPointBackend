@@ -1,8 +1,27 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 
 const isFirestore = process.env.FIRESTORE === 'true';
+const logger = new Logger('PostgresModule');
+
+function parseBool(value: string | undefined, fallback: boolean): boolean {
+  if (value == null) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+function resolveDatabaseUrl(config: ConfigService): string | undefined {
+  return (
+    process.env.SUPABASE_DATABASE_URL ||
+    process.env.DATABASE_URL ||
+    config.get<string>('SUPABASE_DATABASE_URL') ||
+    config.get<string>('DATABASE_URL')
+  )?.trim();
+}
 
 @Module({
   imports: [
@@ -11,6 +30,13 @@ const isFirestore = process.env.FIRESTORE === 'true';
     // can be resolved. Use an in-memory SQLite DB for that purpose.
     ...(isFirestore
       ? [
+          ...(process.env.NODE_ENV === 'production'
+            ? (() => {
+                throw new Error(
+                  'FIRESTORE=true uses in-memory SQLite and will lose data on restart. Disable FIRESTORE and configure SUPABASE_DATABASE_URL for persistent storage.',
+                );
+              })()
+            : []),
           TypeOrmModule.forRoot({
             type: 'sqlite',
             database: ':memory:',
@@ -24,15 +50,36 @@ const isFirestore = process.env.FIRESTORE === 'true';
             imports: [ConfigModule],
             inject: [ConfigService],
             useFactory: (config: ConfigService) => {
-              const databaseUrl = process.env.DATABASE_URL || config.get<string>('DATABASE_URL');
+              const databaseUrl = resolveDatabaseUrl(config);
+              const synchronize = parseBool(
+                process.env.DB_SYNC ?? config.get<string>('DB_SYNC'),
+                false,
+              );
+              const dropSchema = parseBool(
+                process.env.DB_DROP_SCHEMA ?? config.get<string>('DB_DROP_SCHEMA'),
+                false,
+              );
 
               const base = {
                 type: 'postgres' as const,
                 entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-                synchronize: true,
+                synchronize,
+                dropSchema,
                 logging: config.get<string>('NODE_ENV') === 'development',
                 ssl: databaseUrl ? { rejectUnauthorized: false } : false,
               };
+
+              if (config.get<string>('NODE_ENV') === 'production' && !databaseUrl) {
+                throw new Error(
+                  'No Supabase/Postgres connection string configured. Set SUPABASE_DATABASE_URL or DATABASE_URL to a persistent Postgres instance.',
+                );
+              }
+
+              if (databaseUrl) {
+                logger.log('Using external Postgres connection string for persistence');
+              } else {
+                logger.warn('Using local Postgres fallback; data persists only while that database exists.');
+              }
 
               if (databaseUrl) {
                 return { ...base, url: databaseUrl };

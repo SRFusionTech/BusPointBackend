@@ -214,12 +214,21 @@ export class AuthService {
 
   /**
    * POST /auth/send-otp?phone=
-   * Generates a 6-digit OTP, stores it for 10 minutes, and sends via SMS.
+   * Validates that a user with this phone exists in the DB, then generates a
+   * 6-digit OTP, stores it for 10 minutes, and sends via SMS. Unknown numbers
+   * are rejected so only provisioned parents/drivers can sign in.
    */
   async sendOtp(phone: string) {
     const normalizedPhone = phone.replace(/^\+91/, '').replace(/\D/g, '');
     if (!/^\d{10}$/.test(normalizedPhone)) {
       throw new BadRequestException('Invalid phone number. Must be 10 digits.');
+    }
+
+    const user = await this.userRepository.findOneBy({ phone: normalizedPhone });
+    if (!user) {
+      throw new UnauthorizedException(
+        'This phone number is not registered. Please contact your school admin.',
+      );
     }
 
     const otp = String(Math.floor(100000 + Math.random() * 900000));
@@ -237,10 +246,10 @@ export class AuthService {
       this.logger.warn(`[OTP] SMS delivery failed for ${normalizedPhone}; using dev_otp fallback in non-production.`);
     }
 
-    const user = await this.userRepository.findOneBy({ phone: normalizedPhone });
     return {
       success: true,
-      user_exists: !!user,
+      user_exists: true,
+      role: user.role,
       // Expose OTP in non-production when SMS provider is unavailable or failed.
       ...(process.env.NODE_ENV !== 'production' && (!hasSmsKey || smsFailed) ? { dev_otp: otp } : {}),
     };
@@ -268,23 +277,16 @@ export class AuthService {
     // OTP is valid — consume it
     this.otpStore.delete(normalizedPhone);
 
-    let user = await this.userRepository.findOneBy({ phone: normalizedPhone });
-    let is_new_user = false;
-
+    const user = await this.userRepository.findOneBy({ phone: normalizedPhone });
     if (!user) {
-      is_new_user = true;
-      user = this.userRepository.create({
-        phone: normalizedPhone,
-        firstName: 'User',
-        lastName: normalizedPhone,
-        name: `User ${normalizedPhone}`,
-        email: `${normalizedPhone}@buspoint.app`,
-        role: UserRole.PARENT,
-      });
-      user = await this.userRepository.save(user);
+      // Defensive: sendOtp already enforces existence, but a user could be
+      // deleted between send and verify.
+      throw new UnauthorizedException(
+        'This phone number is no longer registered. Please contact your school admin.',
+      );
     }
 
-    return this.buildAuthResponse(user, { is_new_user });
+    return this.buildAuthResponse(user, { is_new_user: false });
   }
 
   async loginWithPassword(dto: LoginDto) {

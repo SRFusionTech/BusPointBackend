@@ -39,7 +39,7 @@ export class Bus {
   @Column({ unique: true })
   plateNumber: string;
 
-  @Column()
+  @Column({ nullable: true })
   routeName: string;
 
   // Link to the structured Route entity (with stops). Nullable so legacy buses

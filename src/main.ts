@@ -5,6 +5,12 @@ import { SnakeCaseInterceptor } from './common/interceptors/snake-case.intercept
 import { SeedService } from './seed/seed.service';
 
 async function bootstrap() {
+  if (process.env.NODE_ENV === 'production' && process.env.FIRESTORE === 'true') {
+    throw new Error(
+      'FIRESTORE=true is in-memory only and will erase data on restart. Disable it and point DATABASE_URL or SUPABASE_DATABASE_URL at a persistent Postgres database.',
+    );
+  }
+
   const app = await NestFactory.create(AppModule);
 
   app.useGlobalPipes(

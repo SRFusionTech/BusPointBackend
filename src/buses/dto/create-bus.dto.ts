@@ -18,8 +18,8 @@ export class CreateBusDto {
   plateNumber: string;
 
   @IsString()
-  @IsNotEmpty()
-  routeName: string;
+  @IsOptional()
+  routeName?: string;
 
   @IsUUID()
   @IsOptional()
