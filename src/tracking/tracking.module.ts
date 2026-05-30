@@ -6,6 +6,7 @@ import { User } from '../users/entities/user.entity';
 import { Bus } from '../buses/entities/bus.entity';
 import { BusDriver } from '../bus-drivers/entities/bus-driver.entity';
 import { TrackingGateway } from './tracking.gateway';
+import { TrackingController } from './tracking.controller';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { TrackingGateway } from './tracking.gateway';
       }),
     }),
   ],
+  controllers: [TrackingController],
   providers: [TrackingGateway],
   exports: [TrackingGateway],
 })

@@ -391,56 +391,68 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @MessageBody() payload: LocationPayload,
   ): Promise<{ event: string; data: object }> {
     const user = client.data.user as User;
-
     if (user.role !== UserRole.DRIVER) {
       throw new WsException('Only drivers can push location updates');
+    }
+
+    try {
+      // Cache driver→bus check on the socket so we don't re-query every emit.
+      const verifyCached = client.data.verifiedBusId === payload.busId;
+      const result = await this.ingestDriverLocation(user, payload, { skipAssignmentCheck: verifyCached });
+      client.data.verifiedBusId = payload.busId;
+      this.driverBusMap.set(client.id, payload.busId);
+      return { event: 'ack', data: result };
+    } catch (e) {
+      if (e instanceof Error) throw new WsException(e.message);
+      throw e;
+    }
+  }
+
+  /**
+   * Shared driver-location ingest path. Used by both the WS `location_update`
+   * handler and the HTTP `POST /tracking/location` controller (the controller
+   * is needed because Android background tasks can't reliably keep a WebSocket
+   * open). Returns the broadcast payload or an info object on stale drops.
+   */
+  async ingestDriverLocation(
+    user: User,
+    payload: LocationPayload,
+    opts: { skipAssignmentCheck?: boolean } = {},
+  ): Promise<Record<string, unknown>> {
+    if (user.role !== UserRole.DRIVER) {
+      throw new Error('Only drivers can push location updates');
     }
 
     const { busId } = payload;
     const latitude = payload.latitude ?? payload.lat;
     const longitude = payload.longitude ?? payload.lng;
-
     if (latitude == null || longitude == null) {
-      throw new WsException('Location coordinates are required');
+      throw new Error('Location coordinates are required');
     }
 
     const bus = await this.busRepository.findOneBy({ id: busId });
-    if (!bus) {
-      throw new WsException('Bus not found');
-    }
+    if (!bus) throw new Error('Bus not found');
 
-    // Validate driver→bus assignment once per connection (cache result on socket data)
-    if (client.data.verifiedBusId !== busId) {
+    if (!opts.skipAssignmentCheck) {
       const assignment = await this.busDriverRepository.findOne({
         where: { driverId: user.id, busId, isActive: true },
       });
-      if (!assignment) {
-        throw new WsException(`Driver ${user.id} is not assigned to bus ${busId}`);
-      }
-      client.data.verifiedBusId = busId;
+      if (!assignment) throw new Error(`Driver ${user.id} is not assigned to bus ${busId}`);
     }
-
-    // Track driver→bus for disconnect cleanup
-    this.driverBusMap.set(client.id, busId);
 
     const now = new Date();
     const payloadTime = payload.timestamp ? new Date(payload.timestamp) : now;
     const incomingTime = Number.isNaN(payloadTime.getTime()) ? now : payloadTime;
 
-    // Ignore out-of-order updates to avoid jitter/race overwrites after reconnects.
     if (bus.lastUpdated && incomingTime.getTime() + 1500 < bus.lastUpdated.getTime()) {
       return {
-        event: 'ack',
-        data: {
-          busId,
-          dropped: true,
-          reason: 'stale_update',
-          latestTimestamp: bus.lastUpdated.toISOString(),
-        },
+        busId,
+        dropped: true,
+        reason: 'stale_update',
+        latestTimestamp: bus.lastUpdated.toISOString(),
       };
     }
 
-    // Persist latest position
     await this.busRepository.update(busId, {
       lastLat: latitude,
       lastLng: longitude,
@@ -448,7 +460,6 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       status: bus.status === BusStatus.GPS_LOST ? BusStatus.STARTED : bus.status,
     });
 
-    // Reset the GPS-lost watchdog
     this.resetHeartbeat(busId);
 
     const broadcastPayload = {
@@ -461,16 +472,10 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       timestamp: incomingTime.toISOString(),
     };
 
-    // Broadcast to all subscribers of this bus (including the driver's own socket)
     this.server.to(`bus:${busId}`).emit('bus_location', broadcastPayload);
+    await this.emitParentLocationsToDrivers(busId, { latitude, longitude });
 
-    // Driver-only helper payload for pickup routing (kept off parent/admin channels).
-    await this.emitParentLocationsToDrivers(busId, {
-      latitude,
-      longitude,
-    });
-
-    return { event: 'ack', data: broadcastPayload };
+    return broadcastPayload;
   }
 
   // ─── Driver only: update bus status ───────────────────────────────────────
