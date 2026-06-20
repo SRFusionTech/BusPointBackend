@@ -43,6 +43,10 @@ export class CreateUserDto {
   @IsOptional()
   busId?: string;
 
+  @IsUUID()
+  @IsOptional()
+  routeStopId?: string;
+
   @IsString()
   @IsOptional()
   childName?: string;

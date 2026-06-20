@@ -34,6 +34,12 @@ export class RoutesService {
     return route;
   }
 
+  async findStopById(stopId: string): Promise<RouteStop> {
+    const stop = await this.stopRepo.findOneBy({ id: stopId });
+    if (!stop) throw new NotFoundException(`Stop ${stopId} not found`);
+    return stop;
+  }
+
   async create(dto: CreateRouteDto): Promise<Route> {
     const { stops, ...routeFields } = dto;
     const route = this.routeRepo.create(routeFields);

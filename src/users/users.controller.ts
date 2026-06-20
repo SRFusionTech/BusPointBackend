@@ -66,6 +66,14 @@ export class UsersController {
     throw new ForbiddenException('Only school admins can list users');
   }
 
+  // GET /api/users/me/pickup-stop — must be registered before GET :id
+  @Get('me/pickup-stop')
+  getMyPickupStop(
+    @Req() req: { user: { id: string; role: UserRole } },
+  ) {
+    return this.usersService.getPickupStopAssignment(req.user.id);
+  }
+
   // GET /api/users/:id
   @Get(':id')
   async findOne(

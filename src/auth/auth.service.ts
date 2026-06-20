@@ -103,8 +103,14 @@ export class AuthService {
         ? decodedToken.phone_number.replace(/^\+91/, '').replace(/\D/g, '')
         : null;
 
-      user = await this.userRepository.findOneBy({ email })
-        ?? (firebasePhone
+      const buspointEmail = firebasePhone ? `${firebasePhone}@buspoint.app` : null;
+
+      user =
+        (await this.userRepository.findOneBy({ email })) ??
+        (buspointEmail
+          ? await this.userRepository.findOneBy({ email: buspointEmail })
+          : null) ??
+        (firebasePhone
           ? await this.userRepository.findOneBy({ phone: firebasePhone })
           : null);
 

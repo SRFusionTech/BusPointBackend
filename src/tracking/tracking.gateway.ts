@@ -26,6 +26,7 @@ interface LocationPayload {
   longitude?: number;
   lat?: number;
   lng?: number;
+  heading?: number;
   timestamp?: string;
 }
 
@@ -462,6 +463,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     this.resetHeartbeat(busId);
 
+    const heading =
+      typeof payload.heading === 'number' && Number.isFinite(payload.heading)
+        ? payload.heading
+        : undefined;
+
     const broadcastPayload = {
       busId,
       driverId: user.id,
@@ -469,6 +475,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       longitude,
       lat: latitude,
       lng: longitude,
+      ...(heading !== undefined ? { heading } : {}),
       timestamp: incomingTime.toISOString(),
     };
 

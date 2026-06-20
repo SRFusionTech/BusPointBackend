@@ -51,6 +51,7 @@ export class AdminController {
     @QueryAlias('schoolId', 'school_id') schoolId: string,
     @QueryAlias('busId', 'bus_id') busId: string,
     @QueryAlias('childName', 'child_name') childName: string,
+    @QueryAlias('routeStopId', 'route_stop_id') routeStopId?: string,
   ) {
     const requester = req.user;
     if (requester.role !== 'admin') {
@@ -59,6 +60,6 @@ export class AdminController {
     if (!requester.schoolId || requester.schoolId !== schoolId) {
       throw new ForbiddenException('Cannot manage another school');
     }
-    return this.adminService.addParent(phone, name, schoolId, busId, childName);
+    return this.adminService.addParent(phone, name, schoolId, busId, childName, routeStopId);
   }
 }

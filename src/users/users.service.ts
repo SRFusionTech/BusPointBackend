@@ -2,10 +2,13 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
+import { Bus } from '../buses/entities/bus.entity';
+import { RouteStop } from '../routes/entities/route-stop.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -14,7 +17,66 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Bus)
+    private readonly busRepository: Repository<Bus>,
+    @InjectRepository(RouteStop)
+    private readonly stopRepository: Repository<RouteStop>,
   ) {}
+
+  private async validatePickupStop(
+    busId: string | null | undefined,
+    routeStopId: string | null | undefined,
+  ): Promise<void> {
+    if (!routeStopId) return;
+    if (!busId) {
+      throw new BadRequestException('Assign a bus before selecting a pickup stop.');
+    }
+
+    const bus = await this.busRepository.findOneBy({ id: busId });
+    if (!bus?.routeId) {
+      throw new BadRequestException('The selected bus has no route with pickup stops.');
+    }
+
+    const stop = await this.stopRepository.findOneBy({ id: routeStopId });
+    if (!stop || stop.routeId !== bus.routeId) {
+      throw new BadRequestException('Pickup stop does not belong to this bus route.');
+    }
+  }
+
+  private normalizePhone(phone: string | null | undefined): string | null {
+    if (!phone) return null;
+    const digits = phone.replace(/^\+91/, '').replace(/\D/g, '');
+    return digits.length > 0 ? digits : null;
+  }
+
+  /** Read pickup id from any legacy column name (production DB may differ). */
+  private async resolveRouteStopId(userId: string): Promise<string | null> {
+    const type = this.userRepository.manager.connection.options.type;
+    if (type === 'postgres') {
+      try {
+        const rows = await this.userRepository.query(
+          `SELECT COALESCE(route_stop_id, "routeStopId", routestopid) AS rid
+           FROM users WHERE id = $1 LIMIT 1`,
+          [userId],
+        );
+        const rid = rows?.[0]?.rid;
+        if (typeof rid === 'string' && rid.trim()) return rid.trim();
+      } catch {
+        // Fall through to entity field.
+      }
+    }
+    const user = await this.userRepository.findOneBy({ id: userId });
+    const fromEntity = user?.routeStopId?.trim();
+    return fromEntity || null;
+  }
+
+  private async hydrateRouteStopId(user: User): Promise<User> {
+    const resolved = await this.resolveRouteStopId(user.id);
+    if (resolved !== user.routeStopId) {
+      user.routeStopId = resolved;
+    }
+    return user;
+  }
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     const existingEmail = await this.userRepository.findOneBy({
@@ -25,7 +87,7 @@ export class UsersService {
     }
 
     const existingPhone = await this.userRepository.findOneBy({
-      phone: createUserDto.phone,
+      phone: this.normalizePhone(createUserDto.phone) ?? createUserDto.phone,
     });
     if (existingPhone) {
       throw new ConflictException('Phone number is already in use');
@@ -35,8 +97,31 @@ export class UsersService {
       createUserDto.name = `${createUserDto.firstName} ${createUserDto.lastName}`;
     }
 
-    const user = this.userRepository.create(createUserDto);
-    return this.userRepository.save(user);
+    await this.validatePickupStop(createUserDto.busId, createUserDto.routeStopId);
+
+    const user = this.userRepository.create({
+      ...createUserDto,
+      phone: this.normalizePhone(createUserDto.phone) ?? createUserDto.phone,
+    });
+    const saved = await this.userRepository.save(user);
+    await this.syncLegacyRouteStopColumns(saved.id, saved.routeStopId ?? null);
+    return saved;
+  }
+
+  /** Keep legacy camelCase column in sync for older deployed backends. */
+  private async syncLegacyRouteStopColumns(
+    userId: string,
+    routeStopId: string | null,
+  ): Promise<void> {
+    if (this.userRepository.manager.connection.options.type !== 'postgres') return;
+    try {
+      await this.userRepository.query(
+        `UPDATE users SET route_stop_id = $1, "routeStopId" = $1 WHERE id = $2`,
+        [routeStopId, userId],
+      );
+    } catch {
+      // Non-fatal — primary entity save already succeeded.
+    }
   }
 
   findAll(schoolId?: string, role?: UserRole, busId?: string): Promise<User[]> {
@@ -52,7 +137,45 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(`User with id ${id} not found`);
     }
-    return user;
+    return this.hydrateRouteStopId(user);
+  }
+
+  /** Parent's admin-assigned pickup stop (routeStopId + stop coordinates). */
+  async getPickupStopAssignment(userId: string): Promise<{
+    routeStopId: string | null;
+    stop: {
+      id: string;
+      name: string;
+      lat: number;
+      lng: number;
+      address: string | null;
+      stopOrder: number;
+      routeId: string;
+    } | null;
+  }> {
+    const user = await this.findOne(userId);
+    const routeStopId = user.routeStopId?.trim() || null;
+    if (!routeStopId) {
+      return { routeStopId: null, stop: null };
+    }
+
+    const stop = await this.stopRepository.findOneBy({ id: routeStopId });
+    if (!stop) {
+      return { routeStopId, stop: null };
+    }
+
+    return {
+      routeStopId,
+      stop: {
+        id: stop.id,
+        name: stop.name,
+        lat: stop.lat,
+        lng: stop.lng,
+        address: stop.address ?? null,
+        stopOrder: stop.stopOrder,
+        routeId: stop.routeId,
+      },
+    };
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -71,7 +194,7 @@ export class UsersService {
         : user.email;
     const nextPhone =
       typeof updateUserDto.phone === 'string' && updateUserDto.phone.trim()
-        ? updateUserDto.phone.trim()
+        ? this.normalizePhone(updateUserDto.phone) ?? updateUserDto.phone.trim()
         : user.phone;
 
     if (nextEmail !== user.email) {
@@ -90,8 +213,24 @@ export class UsersService {
 
     const nextFirstName = updateUserDto.firstName?.trim() ?? user.firstName;
     const nextLastName = updateUserDto.lastName?.trim() ?? user.lastName;
+    const nextBusId =
+      updateUserDto.busId !== undefined ? updateUserDto.busId || undefined : user.busId;
+    let nextRouteStopId: string | null | undefined =
+      updateUserDto.routeStopId !== undefined
+        ? (updateUserDto.routeStopId?.trim() || null)
+        : user.routeStopId;
+
+    if (updateUserDto.busId !== undefined && updateUserDto.busId !== user.busId) {
+      if (updateUserDto.routeStopId === undefined) {
+        nextRouteStopId = null;
+      }
+    }
+
+    await this.validatePickupStop(nextBusId, nextRouteStopId ?? undefined);
 
     Object.assign(user, updateUserDto, {
+      routeStopId: nextRouteStopId ?? null,
+      busId: nextBusId,
       email: nextEmail,
       phone: nextPhone,
       firstName: nextFirstName,
@@ -100,7 +239,9 @@ export class UsersService {
     });
 
     try {
-      return await this.userRepository.save(user);
+      const saved = await this.userRepository.save(user);
+      await this.syncLegacyRouteStopColumns(id, saved.routeStopId ?? null);
+      return saved;
     } catch (error) {
       if (error instanceof QueryFailedError) {
         const code = (error as { code?: string }).code;

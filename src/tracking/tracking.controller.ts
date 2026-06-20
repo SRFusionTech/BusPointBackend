@@ -17,6 +17,7 @@ interface LocationBody {
   longitude?: number;
   lat?: number;
   lng?: number;
+  heading?: number;
   timestamp?: string;
 }
 

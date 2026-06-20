@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
+import { DatabaseSchemaPatchService } from './database-schema-patch.service';
 
 const isFirestore = process.env.FIRESTORE === 'true';
 const logger = new Logger('PostgresModule');
@@ -102,5 +103,6 @@ function resolveDatabaseUrl(config: ConfigService): string | undefined {
           }),
         ]),
   ],
+  providers: [DatabaseSchemaPatchService],
 })
 export class PostgresModule {}

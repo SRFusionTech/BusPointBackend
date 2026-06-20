@@ -2,12 +2,14 @@ import {
   Injectable,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { Bus } from '../buses/entities/bus.entity';
 import { BusDriver } from '../bus-drivers/entities/bus-driver.entity';
+import { RouteStop } from '../routes/entities/route-stop.entity';
 
 @Injectable()
 export class AdminService {
@@ -18,6 +20,8 @@ export class AdminService {
     private readonly busRepository: Repository<Bus>,
     @InjectRepository(BusDriver)
     private readonly busDriverRepository: Repository<BusDriver>,
+    @InjectRepository(RouteStop)
+    private readonly stopRepository: Repository<RouteStop>,
   ) {}
 
   async getSchoolRoutes(requester: User, schoolId?: string) {
@@ -115,10 +119,21 @@ export class AdminService {
     schoolId: string,
     busId: string,
     childName: string,
+    routeStopId?: string,
   ): Promise<User> {
     const bus = await this.busRepository.findOneBy({ id: busId });
     if (!bus || bus.schoolId !== schoolId) {
       throw new ForbiddenException('Bus does not belong to this school');
+    }
+
+    if (routeStopId) {
+      if (!bus.routeId) {
+        throw new BadRequestException('The selected bus has no route with pickup stops.');
+      }
+      const stop = await this.stopRepository.findOneBy({ id: routeStopId });
+      if (!stop || stop.routeId !== bus.routeId) {
+        throw new BadRequestException('Pickup stop does not belong to this bus route.');
+      }
     }
 
     const existing = await this.userRepository.findOneBy({ phone: phone });
@@ -140,6 +155,7 @@ export class AdminService {
       schoolId,
       busId,
       childName,
+      routeStopId: routeStopId || undefined,
     });
 
     return this.userRepository.save(parent);

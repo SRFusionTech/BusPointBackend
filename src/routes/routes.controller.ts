@@ -26,6 +26,12 @@ export class RoutesController {
     return this.routesService.findAllForSchool(schoolId);
   }
 
+  // GET /api/routes/stops/:stopId — must be registered before GET :id
+  @Get('stops/:stopId')
+  findStop(@Param('stopId', ParseUUIDPipe) stopId: string) {
+    return this.routesService.findStopById(stopId);
+  }
+
   // GET /api/routes/:id
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {

@@ -62,6 +62,10 @@ export class User {
   @Column({ nullable: true })
   busId: string;
 
+  /** Assigned pickup stop on the bus route (RouteStop.id). */
+  @Column({ name: 'route_stop_id', type: 'varchar', nullable: true })
+  routeStopId: string | null;
+
   @Column({ nullable: true })
   childName: string;
 
