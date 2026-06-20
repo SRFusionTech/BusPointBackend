@@ -16,6 +16,7 @@ import { Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { Bus, BusStatus } from '../buses/entities/bus.entity';
 import { BusDriver } from '../bus-drivers/entities/bus-driver.entity';
+import { TripProgressService } from './trip-progress.service';
 
 // ─── Payload shapes ───────────────────────────────────────────────────────────
 
@@ -34,6 +35,17 @@ interface StatusPayload {
   busId: string;
   status: BusStatus;
 }
+
+interface MarkStopPayload {
+  busId: string;
+  stopId?: string;
+}
+
+const TRIP_ACTIVE_STATUSES = new Set<BusStatus>([
+  BusStatus.STARTED,
+  BusStatus.RETURNING,
+  BusStatus.AT_SCHOOL,
+]);
 
 interface ParentLocationPayload {
   busId: string;
@@ -110,9 +122,56 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly busRepository: Repository<Bus>,
     @InjectRepository(BusDriver)
     private readonly busDriverRepository: Repository<BusDriver>,
+    private readonly tripProgress: TripProgressService,
   ) {}
 
   // ─── Heartbeat helpers ────────────────────────────────────────────────────
+
+  private isTripActive(status: BusStatus): boolean {
+    return TRIP_ACTIVE_STATUSES.has(status);
+  }
+
+  private emitStopReached(
+    busId: string,
+    result: { stop: { id: string; name: string; stopOrder: number }; reachedStopIds: string[] },
+  ): void {
+    this.server.to(`bus:${busId}`).emit('bus_stop_reached', {
+      busId,
+      stopId: result.stop.id,
+      stopName: result.stop.name,
+      stopOrder: result.stop.stopOrder,
+      reachedStopIds: result.reachedStopIds,
+      timestamp: new Date().toISOString(),
+    });
+    this.logger.log(
+      `Bus ${busId} reached stop ${result.stop.name} (${result.reachedStopIds.length} total)`,
+    );
+  }
+
+  private async syncTripProgressFromStatus(busId: string, status: BusStatus, routeId: string | null): Promise<void> {
+    if (status === BusStatus.STARTED) {
+      await this.tripProgress.startTrip(busId, routeId);
+      return;
+    }
+    if (status === BusStatus.ENDED || status === BusStatus.IDLE) {
+      this.tripProgress.endTrip(busId);
+    }
+  }
+
+  private async processStopGeofence(
+    busId: string,
+    latitude: number,
+    longitude: number,
+    routeId: string | null,
+    status: BusStatus,
+  ): Promise<void> {
+    if (!this.isTripActive(status)) return;
+    this.tripProgress.ensureTripLoaded(busId, routeId);
+    const reached = this.tripProgress.tryAutoReach(busId, latitude, longitude);
+    if (reached) {
+      this.emitStopReached(busId, reached);
+    }
+  }
 
   private clearHeartbeat(busId: string): void {
     const timer = this.gpsHeartbeat.get(busId);
@@ -355,6 +414,12 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
 
     // Send the latest known snapshot immediately so parent gets position on join
+    if (this.isTripActive(bus.status)) {
+      this.tripProgress.ensureTripLoaded(bus.id, bus.routeId);
+    }
+
+    const reachedStopIds = this.tripProgress.getReachedStopIds(bus.id);
+
     return {
       event: 'bus_snapshot',
       data: {
@@ -366,6 +431,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
         status:      bus.status,
         lastUpdated: bus.lastUpdated?.toISOString() ?? null,
         iconUrl:     bus.iconUrl,
+        reachedStopIds,
       },
     };
   }
@@ -482,6 +548,9 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(`bus:${busId}`).emit('bus_location', broadcastPayload);
     await this.emitParentLocationsToDrivers(busId, { latitude, longitude });
 
+    const liveStatus = bus.status === BusStatus.GPS_LOST ? BusStatus.STARTED : bus.status;
+    await this.processStopGeofence(busId, latitude, longitude, bus.routeId, liveStatus);
+
     return broadcastPayload;
   }
 
@@ -528,6 +597,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     await this.busRepository.update(busId, { status });
 
+    await this.syncTripProgressFromStatus(busId, status, bus.routeId);
+
     // Clear the heartbeat when the trip is over
     if (status === BusStatus.ENDED || status === BusStatus.IDLE) {
       this.clearHeartbeat(busId);
@@ -543,6 +614,48 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(`bus:${busId}`).emit('bus_status', broadcastPayload);
 
     return { event: 'ack', data: broadcastPayload };
+  }
+
+  // ─── Driver: manually mark next stop reached (fallback to auto geofence) ──
+
+  @SubscribeMessage('mark_stop_reached')
+  async handleMarkStopReached(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: MarkStopPayload,
+  ): Promise<{ event: string; data: object }> {
+    const user = client.data.user as User;
+    if (user.role !== UserRole.DRIVER) {
+      throw new WsException('Only drivers can mark stops reached');
+    }
+
+    const { busId, stopId } = payload;
+    const assignment = await this.busDriverRepository.findOne({
+      where: { driverId: user.id, busId, isActive: true },
+    });
+    if (!assignment) {
+      throw new WsException(`Driver ${user.id} is not assigned to bus ${busId}`);
+    }
+
+    const bus = await this.busRepository.findOneBy({ id: busId });
+    if (!bus) throw new WsException('Bus not found');
+
+    this.tripProgress.ensureTripLoaded(busId, bus.routeId);
+    const result = this.tripProgress.markNextStopReached(busId, stopId);
+    if (!result) {
+      throw new WsException('No pending stop to mark or stop out of order');
+    }
+
+    this.emitStopReached(busId, result);
+
+    return {
+      event: 'ack',
+      data: {
+        busId,
+        stopId: result.stop.id,
+        stopName: result.stop.name,
+        reachedStopIds: result.reachedStopIds,
+      },
+    };
   }
 
   // ─── Parent only: push live parent location for driver guidance ──────────
