@@ -39,7 +39,7 @@ export class TripProgressService {
     return [...(this.progressByBus.get(busId)?.reachedStopIds ?? [])];
   }
 
-  async startTrip(busId: string, routeId: string | null | undefined): Promise<void> {
+  async startTrip(busId: string, routeId: string | null | undefined, reverseStops: boolean = false): Promise<void> {
     if (!routeId) {
       this.progressByBus.delete(busId);
       return;
@@ -58,18 +58,23 @@ export class TripProgressService {
 
     const stops = (route.stops ?? [])
       .slice()
-      .sort((a, b) => a.stopOrder - b.stopOrder)
-      .map((s) => ({
-        id: s.id,
-        name: s.name,
-        lat: s.lat,
-        lng: s.lng,
-        stopOrder: s.stopOrder,
-      }));
+      .sort((a, b) => a.stopOrder - b.stopOrder);
+      
+    if (reverseStops) {
+      stops.reverse();
+    }
+
+    const mappedStops = stops.map((s) => ({
+      id: s.id,
+      name: s.name,
+      lat: s.lat,
+      lng: s.lng,
+      stopOrder: s.stopOrder,
+    }));
 
     this.progressByBus.set(busId, {
       routeId,
-      stops,
+      stops: mappedStops,
       reachedStopIds: [],
     });
 
@@ -122,11 +127,50 @@ export class TripProgressService {
     return { stop: next, reachedStopIds: [...prog.reachedStopIds] };
   }
 
-  ensureTripLoaded(busId: string, routeId: string | null | undefined): void {
+  ensureTripLoaded(busId: string, routeId: string | null | undefined, reverseStops: boolean = false): void {
     if (!routeId) return;
     if (!this.progressByBus.has(busId)) {
-      void this.startTrip(busId, routeId);
+      void this.startTrip(busId, routeId, reverseStops);
     }
+  }
+
+  buildRichPayload(busId: string, activeDirection: string, status: string, lat?: number, lng?: number): Record<string, any> {
+    const prog = this.progressByBus.get(busId);
+    let currentStop: TripStop | null = null;
+    let nextStop: TripStop | null = null;
+    let completedStops: string[] = [];
+    let remainingStops = 0;
+
+    if (prog) {
+      completedStops = [...prog.reachedStopIds];
+      const nextIndex = prog.stops.findIndex(s => !prog.reachedStopIds.includes(s.id));
+      if (nextIndex >= 0) {
+        nextStop = prog.stops[nextIndex];
+        currentStop = nextIndex > 0 ? prog.stops[nextIndex - 1] : null;
+        remainingStops = prog.stops.length - nextIndex;
+      } else {
+        remainingStops = 0;
+        currentStop = prog.stops.length > 0 ? prog.stops[prog.stops.length - 1] : null;
+      }
+    }
+
+    let tripType = activeDirection === 'return' ? 'RETURN' : 'OUTBOUND';
+    let tripStatus = 'IN_PROGRESS';
+    if (status === 'ended' || status === 'idle') {
+      tripStatus = tripType === 'OUTBOUND' ? 'OUTBOUND_COMPLETED' : 'RETURN_COMPLETED';
+    }
+
+    return {
+      tripId: prog?.routeId || null,
+      tripType,
+      tripStatus,
+      currentStop: currentStop?.name || null,
+      nextStop: nextStop?.name || null,
+      completedStops,
+      remainingStops,
+      eta: 'Calculating...', // Basic placeholder for ETA
+      busLocation: lat != null && lng != null ? { lat, lng } : null,
+    };
   }
 }
 

@@ -66,6 +66,10 @@ export class User {
   @Column({ name: 'route_stop_id', type: 'varchar', nullable: true })
   routeStopId: string | null;
 
+  /** Assigned return stop on the return route. */
+  @Column({ name: 'return_route_stop_id', type: 'varchar', nullable: true })
+  returnRouteStopId: string | null;
+
   @Column({ nullable: true })
   childName: string;
 

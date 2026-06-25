@@ -47,6 +47,20 @@ export class Bus {
   @Column({ nullable: true })
   routeId: string;
 
+  @Column({ nullable: true })
+  returnRouteName: string;
+
+  @Column({ nullable: true })
+  returnRouteId: string;
+
+  // Track the current active route for the trip
+  @Column({ nullable: true })
+  activeRouteId: string;
+
+  // Track if the current/next trip is outbound or return
+  @Column({ nullable: true, default: 'outbound' })
+  activeDirection: string;
+
   // Currently assigned driver (denormalized for fast lookup)
   @Column({ nullable: true })
   driverId: string;

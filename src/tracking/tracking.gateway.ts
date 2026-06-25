@@ -34,6 +34,7 @@ interface LocationPayload {
 interface StatusPayload {
   busId: string;
   status: BusStatus;
+  direction?: 'outbound' | 'return';
 }
 
 interface MarkStopPayload {
@@ -149,8 +150,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   private async syncTripProgressFromStatus(busId: string, status: BusStatus, routeId: string | null): Promise<void> {
+    const bus = await this.busRepository.findOneBy({ id: busId });
+    const isSameRouteAndReturn = bus != null && bus.activeDirection === 'return' && (bus.routeId === bus.returnRouteId || !bus.returnRouteId);
+
     if (status === BusStatus.STARTED) {
-      await this.tripProgress.startTrip(busId, routeId);
+      await this.tripProgress.startTrip(busId, routeId, isSameRouteAndReturn);
       return;
     }
     if (status === BusStatus.ENDED || status === BusStatus.IDLE) {
@@ -166,7 +170,9 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     status: BusStatus,
   ): Promise<void> {
     if (!this.isTripActive(status)) return;
-    this.tripProgress.ensureTripLoaded(busId, routeId);
+    const bus = await this.busRepository.findOneBy({ id: busId });
+    const isSameRouteAndReturn = bus != null && bus.activeDirection === 'return' && (bus.activeRouteId === bus.returnRouteId || !bus.returnRouteId);
+    this.tripProgress.ensureTripLoaded(busId, routeId, isSameRouteAndReturn);
     const reached = this.tripProgress.tryAutoReach(busId, latitude, longitude);
     if (reached) {
       this.emitStopReached(busId, reached);
@@ -415,7 +421,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     // Send the latest known snapshot immediately so parent gets position on join
     if (this.isTripActive(bus.status)) {
-      this.tripProgress.ensureTripLoaded(bus.id, bus.routeId);
+      this.tripProgress.ensureTripLoaded(bus.id, bus.activeRouteId || bus.routeId);
     }
 
     const reachedStopIds = this.tripProgress.getReachedStopIds(bus.id);
@@ -543,13 +549,14 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       lng: longitude,
       ...(heading !== undefined ? { heading } : {}),
       timestamp: incomingTime.toISOString(),
+      ...this.tripProgress.buildRichPayload(busId, bus.activeDirection || 'outbound', bus.status, latitude, longitude),
     };
 
     this.server.to(`bus:${busId}`).emit('bus_location', broadcastPayload);
     await this.emitParentLocationsToDrivers(busId, { latitude, longitude });
 
     const liveStatus = bus.status === BusStatus.GPS_LOST ? BusStatus.STARTED : bus.status;
-    await this.processStopGeofence(busId, latitude, longitude, bus.routeId, liveStatus);
+    await this.processStopGeofence(busId, latitude, longitude, bus.activeRouteId || bus.routeId, liveStatus);
 
     return broadcastPayload;
   }
@@ -567,7 +574,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       throw new WsException('Only drivers can update bus status');
     }
 
-    const { busId, status } = payload;
+    const { busId, status, direction } = payload;
 
     const validStatuses = new Set<BusStatus>([
       BusStatus.IDLE,
@@ -595,9 +602,26 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       throw new WsException('Bus not found');
     }
 
-    await this.busRepository.update(busId, { status });
+    let activeRouteId: string | null = bus.activeRouteId;
+    let activeDirection: string = bus.activeDirection || 'outbound';
 
-    await this.syncTripProgressFromStatus(busId, status, bus.routeId);
+    if (status === BusStatus.STARTED) {
+      activeRouteId = direction === 'return' ? (bus.returnRouteId || bus.routeId || null) : (bus.routeId || null);
+      activeDirection = direction === 'return' ? 'return' : 'outbound';
+    } else if (status === BusStatus.ENDED || status === BusStatus.IDLE) {
+      // Cue up the next trip direction when the current trip ends
+      if (activeDirection === 'outbound') {
+        activeRouteId = bus.returnRouteId || bus.routeId || null;
+        activeDirection = 'return';
+      } else if (activeDirection === 'return' && bus.routeId) {
+        activeRouteId = bus.routeId;
+        activeDirection = 'outbound';
+      }
+    }
+
+    await this.busRepository.update(busId, { status, activeRouteId: activeRouteId as any, activeDirection: activeDirection as any });
+
+    await this.syncTripProgressFromStatus(busId, status, activeRouteId);
 
     // Clear the heartbeat when the trip is over
     if (status === BusStatus.ENDED || status === BusStatus.IDLE) {
@@ -608,10 +632,18 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const broadcastPayload = {
       busId,
       status,
+      activeRouteId,
+      activeDirection,
       timestamp: new Date().toISOString(),
+      ...this.tripProgress.buildRichPayload(busId, activeDirection, status, bus.lastLat || undefined, bus.lastLng || undefined),
     };
 
     this.server.to(`bus:${busId}`).emit('bus_status', broadcastPayload);
+
+    // Emit TRIP_TYPE_CHANGED if a return trip just started
+    if (status === BusStatus.STARTED && activeDirection === 'return' && bus.activeDirection !== 'return') {
+      this.server.to(`bus:${busId}`).emit('TRIP_TYPE_CHANGED', broadcastPayload);
+    }
 
     return { event: 'ack', data: broadcastPayload };
   }
@@ -639,7 +671,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const bus = await this.busRepository.findOneBy({ id: busId });
     if (!bus) throw new WsException('Bus not found');
 
-    this.tripProgress.ensureTripLoaded(busId, bus.routeId);
+    const isSameRouteAndReturn = bus.activeDirection === 'return' && bus.routeId === bus.returnRouteId;
+    this.tripProgress.ensureTripLoaded(busId, bus.activeRouteId || bus.routeId, isSameRouteAndReturn);
     const result = this.tripProgress.markNextStopReached(busId, stopId);
     if (!result) {
       throw new WsException('No pending stop to mark or stop out of order');

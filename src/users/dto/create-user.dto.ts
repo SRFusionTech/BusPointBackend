@@ -47,6 +47,10 @@ export class CreateUserDto {
   @IsOptional()
   routeStopId?: string;
 
+  @IsUUID()
+  @IsOptional()
+  returnRouteStopId?: string;
+
   @IsString()
   @IsOptional()
   childName?: string;

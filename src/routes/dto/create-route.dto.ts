@@ -15,6 +15,10 @@ export class CreateRouteStopDto {
   @IsNotEmpty()
   name: string;
 
+  @IsString()
+  @IsOptional()
+  title?: string;
+
   @IsNumber()
   lat: number;
 

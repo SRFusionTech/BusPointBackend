@@ -24,6 +24,9 @@ export class RouteStop {
   @Column()
   name: string;
 
+  @Column({ nullable: true })
+  title: string;
+
   @Column({ type: 'float' })
   lat: number;
 

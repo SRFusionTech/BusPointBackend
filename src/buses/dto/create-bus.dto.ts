@@ -25,6 +25,14 @@ export class CreateBusDto {
   @IsOptional()
   routeId?: string;
 
+  @IsString()
+  @IsOptional()
+  returnRouteName?: string;
+
+  @IsUUID()
+  @IsOptional()
+  returnRouteId?: string;
+
   @IsUUID()
   @IsOptional()
   driverId?: string;
