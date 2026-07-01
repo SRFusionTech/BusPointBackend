@@ -17,6 +17,7 @@ import { User, UserRole } from '../users/entities/user.entity';
 import { Bus, BusStatus } from '../buses/entities/bus.entity';
 import { BusDriver } from '../bus-drivers/entities/bus-driver.entity';
 import { TripProgressService } from './trip-progress.service';
+import { isUsableDriverCoordinate } from '../common/utils/location-quality';
 
 // ─── Payload shapes ───────────────────────────────────────────────────────────
 
@@ -132,6 +133,12 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     return TRIP_ACTIVE_STATUSES.has(status);
   }
 
+  /** Reverse stop order when return uses the same route as outbound (or no separate return route). */
+  private shouldReverseStopsForBus(bus: Bus | null | undefined): boolean {
+    if (!bus || bus.activeDirection !== 'return') return false;
+    return !bus.returnRouteId || bus.routeId === bus.returnRouteId;
+  }
+
   private emitStopReached(
     busId: string,
     result: { stop: { id: string; name: string; stopOrder: number }; reachedStopIds: string[] },
@@ -151,10 +158,10 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   private async syncTripProgressFromStatus(busId: string, status: BusStatus, routeId: string | null): Promise<void> {
     const bus = await this.busRepository.findOneBy({ id: busId });
-    const isSameRouteAndReturn = bus != null && bus.activeDirection === 'return' && (bus.routeId === bus.returnRouteId || !bus.returnRouteId);
+    const reverseStops = this.shouldReverseStopsForBus(bus);
 
     if (status === BusStatus.STARTED) {
-      await this.tripProgress.startTrip(busId, routeId, isSameRouteAndReturn);
+      await this.tripProgress.startTrip(busId, routeId, reverseStops);
       return;
     }
     if (status === BusStatus.ENDED || status === BusStatus.IDLE) {
@@ -171,8 +178,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   ): Promise<void> {
     if (!this.isTripActive(status)) return;
     const bus = await this.busRepository.findOneBy({ id: busId });
-    const isSameRouteAndReturn = bus != null && bus.activeDirection === 'return' && (bus.activeRouteId === bus.returnRouteId || !bus.returnRouteId);
-    this.tripProgress.ensureTripLoaded(busId, routeId, isSameRouteAndReturn);
+    this.tripProgress.ensureTripLoaded(busId, routeId, this.shouldReverseStopsForBus(bus));
     const reached = this.tripProgress.tryAutoReach(busId, latitude, longitude);
     if (reached) {
       this.emitStopReached(busId, reached);
@@ -421,7 +427,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     // Send the latest known snapshot immediately so parent gets position on join
     if (this.isTripActive(bus.status)) {
-      this.tripProgress.ensureTripLoaded(bus.id, bus.activeRouteId || bus.routeId);
+      this.tripProgress.ensureTripLoaded(
+        bus.id,
+        bus.activeRouteId || bus.routeId,
+        this.shouldReverseStopsForBus(bus),
+      );
     }
 
     const reachedStopIds = this.tripProgress.getReachedStopIds(bus.id);
@@ -501,6 +511,13 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const longitude = payload.longitude ?? payload.lng;
     if (latitude == null || longitude == null) {
       throw new Error('Location coordinates are required');
+    }
+    if (!isUsableDriverCoordinate(latitude, longitude)) {
+      return {
+        busId,
+        dropped: true,
+        reason: 'mock_or_invalid_coordinate',
+      };
     }
 
     const bus = await this.busRepository.findOneBy({ id: busId });
@@ -609,8 +626,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       activeRouteId = direction === 'return' ? (bus.returnRouteId || bus.routeId || null) : (bus.routeId || null);
       activeDirection = direction === 'return' ? 'return' : 'outbound';
     } else if (status === BusStatus.ENDED || status === BusStatus.IDLE) {
-      // Cue up the next trip direction when the current trip ends
-      if (activeDirection === 'outbound') {
+      const hasReturn = !!(bus.returnRouteId || bus.returnRouteName);
+      if (activeDirection === 'outbound' && hasReturn) {
         activeRouteId = bus.returnRouteId || bus.routeId || null;
         activeDirection = 'return';
       } else if (activeDirection === 'return' && bus.routeId) {
@@ -671,8 +688,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const bus = await this.busRepository.findOneBy({ id: busId });
     if (!bus) throw new WsException('Bus not found');
 
-    const isSameRouteAndReturn = bus.activeDirection === 'return' && bus.routeId === bus.returnRouteId;
-    this.tripProgress.ensureTripLoaded(busId, bus.activeRouteId || bus.routeId, isSameRouteAndReturn);
+    this.tripProgress.ensureTripLoaded(
+      busId,
+      bus.activeRouteId || bus.routeId,
+      this.shouldReverseStopsForBus(bus),
+    );
     const result = this.tripProgress.markNextStopReached(busId, stopId);
     if (!result) {
       throw new WsException('No pending stop to mark or stop out of order');
