@@ -62,7 +62,8 @@ export class DatabaseSchemaPatchService implements OnModuleInit {
           ADD COLUMN IF NOT EXISTS "returnRouteName" character varying,
           ADD COLUMN IF NOT EXISTS "returnRouteId" character varying,
           ADD COLUMN IF NOT EXISTS "activeRouteId" character varying,
-          ADD COLUMN IF NOT EXISTS "activeDirection" character varying DEFAULT 'outbound'
+          ADD COLUMN IF NOT EXISTS "activeDirection" character varying DEFAULT 'outbound',
+          ADD COLUMN IF NOT EXISTS "reachedStopIds" jsonb
         `);
 
         await this.dataSource.query(`
@@ -99,6 +100,11 @@ export class DatabaseSchemaPatchService implements OnModuleInit {
         try {
           await this.dataSource.query(`
             ALTER TABLE "buses" ADD COLUMN "activeDirection" varchar DEFAULT 'outbound'
+          `);
+        } catch {}
+        try {
+          await this.dataSource.query(`
+            ALTER TABLE "buses" ADD COLUMN "reachedStopIds" text
           `);
         } catch {}
         try {

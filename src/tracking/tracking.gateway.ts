@@ -91,8 +91,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   private readonly logger = new Logger(TrackingGateway.name);
 
   /**
-   * socketId → busId  — tracks which bus a driver socket is broadcasting for.
-   * Used in handleDisconnect to emit GPS_LOST when driver drops.
+   * socketId → busId — tracks which bus a driver socket is broadcasting for.
+   * Cleared on disconnect; GPS loss is detected via heartbeat timeout instead.
    */
   private readonly driverBusMap = new Map<string, string>();
 
@@ -161,11 +161,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const reverseStops = this.shouldReverseStopsForBus(bus);
 
     if (status === BusStatus.STARTED) {
-      await this.tripProgress.startTrip(busId, routeId, reverseStops);
+      await this.tripProgress.startTrip(busId, routeId, reverseStops, { reset: true });
       return;
     }
     if (status === BusStatus.ENDED || status === BusStatus.IDLE) {
-      this.tripProgress.endTrip(busId);
+      await this.tripProgress.endTrip(busId);
     }
   }
 
@@ -178,8 +178,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   ): Promise<void> {
     if (!this.isTripActive(status)) return;
     const bus = await this.busRepository.findOneBy({ id: busId });
-    this.tripProgress.ensureTripLoaded(busId, routeId, this.shouldReverseStopsForBus(bus));
-    const reached = this.tripProgress.tryAutoReach(busId, latitude, longitude);
+    await this.tripProgress.ensureTripLoaded(busId, routeId, this.shouldReverseStopsForBus(bus));
+    const reached = await this.tripProgress.tryAutoReach(busId, latitude, longitude);
     if (reached) {
       this.emitStopReached(busId, reached);
     }
@@ -360,24 +360,14 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       `Disconnected: ${user ? `${user.role} ${user.id}` : 'unknown'} (socket ${client.id})`,
     );
 
-    // If this was a driver socket, immediately signal GPS lost to parents
+    // Driver socket dropped — do not mark GPS_LOST here. Background HTTP may
+    // still be posting location; heartbeat timeout handles true signal loss.
     if (user?.role === UserRole.DRIVER) {
       const busId = this.driverBusMap.get(client.id);
       if (busId) {
         this.driverBusMap.delete(client.id);
         this.removeDriverSocket(client.id);
-        this.clearHeartbeat(busId);
-        try {
-          await this.busRepository.update(busId, { status: BusStatus.GPS_LOST });
-          this.server.to(`bus:${busId}`).emit('bus_status', {
-            busId,
-            status: BusStatus.GPS_LOST,
-            timestamp: new Date().toISOString(),
-          });
-          this.logger.warn(`Driver ${user.id} disconnected → Bus ${busId} marked GPS_LOST`);
-        } catch (err) {
-          this.logger.error(`Failed to mark GPS_LOST on disconnect for bus ${busId}`, err);
-        }
+        this.logger.log(`Driver socket ${client.id} left bus ${busId} (trip may still be broadcasting via HTTP)`);
       }
     }
   }
@@ -427,7 +417,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     // Send the latest known snapshot immediately so parent gets position on join
     if (this.isTripActive(bus.status)) {
-      this.tripProgress.ensureTripLoaded(
+      await this.tripProgress.ensureTripLoaded(
         bus.id,
         bus.activeRouteId || bus.routeId,
         this.shouldReverseStopsForBus(bus),
@@ -445,6 +435,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
         lat:         bus.lastLat,
         lng:         bus.lastLng,
         status:      bus.status,
+        activeRouteId: bus.activeRouteId ?? bus.routeId ?? null,
+        activeDirection: bus.activeDirection ?? 'outbound',
         lastUpdated: bus.lastUpdated?.toISOString() ?? null,
         iconUrl:     bus.iconUrl,
         reachedStopIds,
@@ -630,8 +622,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       if (activeDirection === 'outbound' && hasReturn) {
         activeRouteId = bus.returnRouteId || bus.routeId || null;
         activeDirection = 'return';
-      } else if (activeDirection === 'return' && bus.routeId) {
-        activeRouteId = bus.routeId;
+      } else if (activeDirection === 'return') {
+        activeRouteId = bus.routeId || bus.returnRouteId || null;
         activeDirection = 'outbound';
       }
     }
@@ -688,12 +680,12 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const bus = await this.busRepository.findOneBy({ id: busId });
     if (!bus) throw new WsException('Bus not found');
 
-    this.tripProgress.ensureTripLoaded(
+    await this.tripProgress.ensureTripLoaded(
       busId,
       bus.activeRouteId || bus.routeId,
       this.shouldReverseStopsForBus(bus),
     );
-    const result = this.tripProgress.markNextStopReached(busId, stopId);
+    const result = await this.tripProgress.markNextStopReached(busId, stopId);
     if (!result) {
       throw new WsException('No pending stop to mark or stop out of order');
     }

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Route } from '../routes/entities/route.entity';
+import { Bus } from '../buses/entities/bus.entity';
 
 /** Bus must enter this radius (meters) of the next stop to auto-mark it reached. */
 export const STOP_REACH_RADIUS_M = 100;
@@ -25,6 +26,11 @@ export type StopReachedResult = {
   reachedStopIds: string[];
 };
 
+type StartTripOptions = {
+  /** When true, clears saved progress (new outbound/return leg). */
+  reset?: boolean;
+};
+
 @Injectable()
 export class TripProgressService {
   private readonly logger = new Logger(TripProgressService.name);
@@ -33,13 +39,20 @@ export class TripProgressService {
   constructor(
     @InjectRepository(Route)
     private readonly routeRepository: Repository<Route>,
+    @InjectRepository(Bus)
+    private readonly busRepository: Repository<Bus>,
   ) {}
 
   getReachedStopIds(busId: string): string[] {
     return [...(this.progressByBus.get(busId)?.reachedStopIds ?? [])];
   }
 
-  async startTrip(busId: string, routeId: string | null | undefined, reverseStops: boolean = false): Promise<void> {
+  async startTrip(
+    busId: string,
+    routeId: string | null | undefined,
+    reverseStops: boolean = false,
+    options: StartTripOptions = {},
+  ): Promise<void> {
     if (!routeId) {
       this.progressByBus.delete(busId);
       return;
@@ -59,7 +72,7 @@ export class TripProgressService {
     const stops = (route.stops ?? [])
       .slice()
       .sort((a, b) => a.stopOrder - b.stopOrder);
-      
+
     if (reverseStops) {
       stops.reverse();
     }
@@ -72,17 +85,31 @@ export class TripProgressService {
       stopOrder: s.stopOrder,
     }));
 
+    const reset = options.reset ?? false;
+    let reachedStopIds: string[] = [];
+
+    if (reset) {
+      await this.persistReachedStopIds(busId, []);
+    } else {
+      const bus = await this.busRepository.findOneBy({ id: busId });
+      reachedStopIds = this.normalizeReachedIds(bus?.reachedStopIds);
+      reachedStopIds = this.filterValidReachedIds(reachedStopIds, mappedStops);
+    }
+
     this.progressByBus.set(busId, {
       routeId,
       stops: mappedStops,
-      reachedStopIds: [],
+      reachedStopIds,
     });
 
-    this.logger.log(`Trip progress started for bus ${busId} · ${stops.length} stops`);
+    this.logger.log(
+      `Trip progress for bus ${busId} · ${stops.length} stops · ${reachedStopIds.length} already reached`,
+    );
   }
 
-  endTrip(busId: string): void {
+  async endTrip(busId: string): Promise<void> {
     this.progressByBus.delete(busId);
+    await this.persistReachedStopIds(busId, []);
   }
 
   getNextStop(busId: string): TripStop | null {
@@ -95,7 +122,11 @@ export class TripProgressService {
    * Mark the next sequential stop when the bus enters the geofence.
    * Returns the newly reached stop, if any.
    */
-  tryAutoReach(busId: string, latitude: number, longitude: number): StopReachedResult | null {
+  async tryAutoReach(
+    busId: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<StopReachedResult | null> {
     const prog = this.progressByBus.get(busId);
     if (!prog) return null;
 
@@ -106,13 +137,15 @@ export class TripProgressService {
     if (distance > STOP_REACH_RADIUS_M) return null;
 
     prog.reachedStopIds.push(next.id);
-    return { stop: next, reachedStopIds: [...prog.reachedStopIds] };
+    const reachedStopIds = [...prog.reachedStopIds];
+    await this.persistReachedStopIds(busId, reachedStopIds);
+    return { stop: next, reachedStopIds };
   }
 
   /**
    * Driver manually confirms arrival at the next pending stop.
    */
-  markNextStopReached(busId: string, stopId?: string): StopReachedResult | null {
+  async markNextStopReached(busId: string, stopId?: string): Promise<StopReachedResult | null> {
     const prog = this.progressByBus.get(busId);
     if (!prog) return null;
 
@@ -124,14 +157,22 @@ export class TripProgressService {
     }
 
     prog.reachedStopIds.push(next.id);
-    return { stop: next, reachedStopIds: [...prog.reachedStopIds] };
+    const reachedStopIds = [...prog.reachedStopIds];
+    await this.persistReachedStopIds(busId, reachedStopIds);
+    return { stop: next, reachedStopIds };
   }
 
-  ensureTripLoaded(busId: string, routeId: string | null | undefined, reverseStops: boolean = false): void {
+  async ensureTripLoaded(
+    busId: string,
+    routeId: string | null | undefined,
+    reverseStops: boolean = false,
+  ): Promise<void> {
     if (!routeId) return;
-    if (!this.progressByBus.has(busId)) {
-      void this.startTrip(busId, routeId, reverseStops);
-    }
+
+    const existing = this.progressByBus.get(busId);
+    if (existing?.routeId === routeId) return;
+
+    await this.startTrip(busId, routeId, reverseStops, { reset: false });
   }
 
   buildRichPayload(busId: string, activeDirection: string, status: string, lat?: number, lng?: number): Record<string, any> {
@@ -171,6 +212,31 @@ export class TripProgressService {
       eta: 'Calculating...', // Basic placeholder for ETA
       busLocation: lat != null && lng != null ? { lat, lng } : null,
     };
+  }
+
+  private normalizeReachedIds(raw: string[] | null | undefined): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  }
+
+  private filterValidReachedIds(ids: string[], stops: TripStop[]): string[] {
+    const stopIds = new Set(stops.map((s) => s.id));
+    const valid = ids.filter((id) => stopIds.has(id));
+    // Enforce sequential order — only keep a prefix of stops in route order.
+    const ordered: string[] = [];
+    for (const stop of stops) {
+      if (!valid.includes(stop.id)) break;
+      ordered.push(stop.id);
+    }
+    return ordered;
+  }
+
+  private async persistReachedStopIds(busId: string, ids: string[]): Promise<void> {
+    try {
+      await this.busRepository.update(busId, { reachedStopIds: ids });
+    } catch (err) {
+      this.logger.error(`Failed to persist reached stops for bus ${busId}`, err);
+    }
   }
 }
 

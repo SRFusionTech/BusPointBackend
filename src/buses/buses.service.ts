@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Bus, BusStatus } from './entities/bus.entity';
 import { User } from '../users/entities/user.entity';
+import { Route } from '../routes/entities/route.entity';
 import { CreateBusDto } from './dto/create-bus.dto';
 import { UpdateBusDto } from './dto/update-bus.dto';
 
@@ -17,7 +18,44 @@ export class BusesService {
     private readonly busRepository: Repository<Bus>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Route)
+    private readonly routeRepository: Repository<Route>,
   ) {}
+
+  /** Link routeId / returnRouteId when admin picked a label but id was missing. */
+  private async normalizeRouteLinks(
+    schoolId: string,
+    data: {
+      routeId?: string | null;
+      routeName?: string | null;
+      returnRouteId?: string | null;
+      returnRouteName?: string | null;
+    },
+  ): Promise<void> {
+    if (!data.routeId && data.routeName?.trim()) {
+      const route = await this.routeRepository.findOne({
+        where: { schoolId, name: data.routeName.trim() },
+      });
+      if (route) data.routeId = route.id;
+    }
+
+    if (!data.returnRouteId && data.returnRouteName?.trim()) {
+      const route = await this.routeRepository.findOne({
+        where: { schoolId, name: data.returnRouteName.trim() },
+      });
+      if (route) data.returnRouteId = route.id;
+    }
+
+    if (
+      !data.returnRouteId &&
+      data.routeId &&
+      data.returnRouteName?.trim() &&
+      data.routeName?.trim() &&
+      data.returnRouteName.trim() === data.routeName.trim()
+    ) {
+      data.returnRouteId = data.routeId;
+    }
+  }
 
   async create(createBusDto: CreateBusDto): Promise<Bus> {
     const existing = await this.busRepository.findOneBy({
@@ -28,7 +66,9 @@ export class BusesService {
         `Bus with plate number "${createBusDto.plateNumber}" already exists`,
       );
     }
-    const bus = this.busRepository.create(createBusDto);
+    const payload = { ...createBusDto };
+    await this.normalizeRouteLinks(createBusDto.schoolId, payload);
+    const bus = this.busRepository.create(payload);
     return this.busRepository.save(bus);
   }
 
@@ -53,7 +93,9 @@ export class BusesService {
 
   async update(id: string, updateBusDto: UpdateBusDto): Promise<Bus> {
     const bus = await this.findOne(id);
-    Object.assign(bus, updateBusDto);
+    const payload = { ...updateBusDto };
+    await this.normalizeRouteLinks(bus.schoolId, payload);
+    Object.assign(bus, payload);
     return this.busRepository.save(bus);
   }
 

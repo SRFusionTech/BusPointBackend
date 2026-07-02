@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { Bus } from '../buses/entities/bus.entity';
+import { Route } from '../routes/entities/route.entity';
 import { RouteStop } from '../routes/entities/route-stop.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -19,27 +20,86 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Bus)
     private readonly busRepository: Repository<Bus>,
+    @InjectRepository(Route)
+    private readonly routeRepository: Repository<Route>,
     @InjectRepository(RouteStop)
     private readonly stopRepository: Repository<RouteStop>,
   ) {}
 
+  private async resolveBusRouteId(
+    bus: Bus,
+    kind: 'outbound' | 'return',
+  ): Promise<string | null> {
+    const direct = kind === 'outbound' ? bus.routeId : bus.returnRouteId;
+    if (direct) return direct;
+
+    const name = (kind === 'outbound' ? bus.routeName : bus.returnRouteName)?.trim();
+    if (!name || !bus.schoolId) return null;
+
+    if (
+      kind === 'return' &&
+      bus.routeName?.trim() &&
+      name === bus.routeName.trim() &&
+      bus.routeId
+    ) {
+      return bus.routeId;
+    }
+
+    const route = await this.routeRepository.findOne({
+      where: { schoolId: bus.schoolId, name },
+    });
+    return route?.id ?? null;
+  }
+
   private async validatePickupStop(
     busId: string | null | undefined,
     routeStopId: string | null | undefined,
+    returnRouteStopId?: string | null | undefined,
   ): Promise<void> {
-    if (!routeStopId) return;
-    if (!busId) {
-      throw new BadRequestException('Assign a bus before selecting a pickup stop.');
+    if (routeStopId) {
+      if (!busId) {
+        throw new BadRequestException('Assign a bus before selecting a pickup stop.');
+      }
+
+      const bus = await this.busRepository.findOneBy({ id: busId });
+      if (!bus) {
+        throw new BadRequestException('Selected bus was not found.');
+      }
+
+      const outboundRouteId = await this.resolveBusRouteId(bus, 'outbound');
+      if (!outboundRouteId) {
+        throw new BadRequestException(
+          'The selected bus has no mapped route. Edit the bus and link a configured route.',
+        );
+      }
+
+      const stop = await this.stopRepository.findOneBy({ id: routeStopId });
+      if (!stop || stop.routeId !== outboundRouteId) {
+        throw new BadRequestException('Pickup stop does not belong to this bus route.');
+      }
     }
 
-    const bus = await this.busRepository.findOneBy({ id: busId });
-    if (!bus?.routeId) {
-      throw new BadRequestException('The selected bus has no route with pickup stops.');
-    }
+    if (returnRouteStopId) {
+      if (!busId) {
+        throw new BadRequestException('Assign a bus before selecting a return stop.');
+      }
 
-    const stop = await this.stopRepository.findOneBy({ id: routeStopId });
-    if (!stop || stop.routeId !== bus.routeId) {
-      throw new BadRequestException('Pickup stop does not belong to this bus route.');
+      const bus = await this.busRepository.findOneBy({ id: busId });
+      if (!bus) {
+        throw new BadRequestException('Selected bus was not found.');
+      }
+
+      const returnRouteId = await this.resolveBusRouteId(bus, 'return');
+      if (!returnRouteId) {
+        throw new BadRequestException(
+          'The selected bus has no return route. Configure a return route on the bus first.',
+        );
+      }
+
+      const stop = await this.stopRepository.findOneBy({ id: returnRouteStopId });
+      if (!stop || stop.routeId !== returnRouteId) {
+        throw new BadRequestException('Return stop does not belong to this bus return route.');
+      }
     }
   }
 
@@ -97,7 +157,11 @@ export class UsersService {
       createUserDto.name = `${createUserDto.firstName} ${createUserDto.lastName}`;
     }
 
-    await this.validatePickupStop(createUserDto.busId, createUserDto.routeStopId);
+    await this.validatePickupStop(
+      createUserDto.busId,
+      createUserDto.routeStopId,
+      createUserDto.returnRouteStopId,
+    );
 
     const user = this.userRepository.create({
       ...createUserDto,
@@ -226,7 +290,13 @@ export class UsersService {
       }
     }
 
-    await this.validatePickupStop(nextBusId, nextRouteStopId ?? undefined);
+    await this.validatePickupStop(
+      nextBusId,
+      nextRouteStopId ?? undefined,
+      updateUserDto.returnRouteStopId !== undefined
+        ? (updateUserDto.returnRouteStopId?.trim() || null)
+        : user.returnRouteStopId,
+    );
 
     Object.assign(user, updateUserDto, {
       routeStopId: nextRouteStopId ?? null,

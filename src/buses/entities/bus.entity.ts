@@ -78,6 +78,10 @@ export class Bus {
   @Column({ type: _useSqlite ? 'datetime' : 'timestamptz', nullable: true })
   lastUpdated: Date;
 
+  /** Stop ids reached on the current trip leg (persisted across app/server restarts). */
+  @Column({ type: 'simple-json', nullable: true })
+  reachedStopIds: string[] | null;
+
   @Column({ type: 'int', nullable: true })
   capacity: number;
 
