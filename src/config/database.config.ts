@@ -14,5 +14,7 @@ export const postgresConfig = registerAs('postgres', () => ({
 }));
 
 export const mongoConfig = registerAs('mongo', () => ({
-  uri: process.env.MONGO_URI || 'mongodb://localhost:27017/buspoint',
+  // No localhost fallback — missing MONGO_URI means notifications are disabled.
+  uri: process.env.MONGO_URI?.trim() || '',
+  enabled: Boolean(process.env.MONGO_URI?.trim()),
 }));

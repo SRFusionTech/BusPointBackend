@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -20,13 +25,23 @@ export class NotificationsService {
 
   constructor(
     @InjectModel(Notification.name)
-    private readonly notificationModel: Model<NotificationDocument>,
+    private readonly notificationModel: Model<NotificationDocument> | null,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
   ) {}
 
+  private requireMongo(): Model<NotificationDocument> {
+    if (!this.notificationModel) {
+      throw new ServiceUnavailableException(
+        'Notifications require MONGO_URI. Core app data uses Supabase/Postgres; set MONGO_URI to enable notification storage.',
+      );
+    }
+    return this.notificationModel;
+  }
+
   private async createAndMarkSent(dto: CreateNotificationDto): Promise<NotificationDocument> {
-    const notification = new this.notificationModel({
+    const model = this.requireMongo();
+    const notification = new model({
       ...dto,
       status: NotificationStatus.SENT,
       sentAt: new Date(),
@@ -87,7 +102,7 @@ export class NotificationsService {
       status: NotificationStatus.SENT,
       sentAt: new Date(),
     }));
-    return this.notificationModel.insertMany(docs) as Promise<NotificationDocument[]>;
+    return this.requireMongo().insertMany(docs) as Promise<NotificationDocument[]>;
   }
 
   // Get notifications with optional bus/school filters
@@ -95,7 +110,7 @@ export class NotificationsService {
     const filter: Record<string, any> = {};
     if (busId) filter['data.busId'] = busId;
     if (schoolId) filter['data.schoolId'] = schoolId;
-    return this.notificationModel
+    return this.requireMongo()
       .find(filter)
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -104,7 +119,7 @@ export class NotificationsService {
 
   // Get all notifications for a recipient (newest first)
   findByRecipient(recipientId: string, limit = 50): Promise<NotificationDocument[]> {
-    return this.notificationModel
+    return this.requireMongo()
       .find({ recipientId })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -113,7 +128,7 @@ export class NotificationsService {
 
   // Get only unread notifications for a recipient
   findUnreadByRecipient(recipientId: string): Promise<NotificationDocument[]> {
-    return this.notificationModel
+    return this.requireMongo()
       .find({ recipientId, isRead: false })
       .sort({ createdAt: -1 })
       .exec();
@@ -121,11 +136,11 @@ export class NotificationsService {
 
   // Count unread notifications for a recipient
   countUnread(recipientId: string): Promise<number> {
-    return this.notificationModel.countDocuments({ recipientId, isRead: false });
+    return this.requireMongo().countDocuments({ recipientId, isRead: false });
   }
 
   async findOne(id: string): Promise<NotificationDocument> {
-    const notification = await this.notificationModel.findById(id).exec();
+    const notification = await this.requireMongo().findById(id).exec();
     if (!notification) {
       throw new NotFoundException(`Notification with id ${id} not found`);
     }
@@ -143,7 +158,7 @@ export class NotificationsService {
 
   // Mark all notifications as read for a recipient
   async markAllAsRead(recipientId: string): Promise<{ updated: number }> {
-    const result = await this.notificationModel.updateMany(
+    const result = await this.requireMongo().updateMany(
       { recipientId, isRead: false },
       { $set: { isRead: true, readAt: new Date(), status: NotificationStatus.READ } },
     );
@@ -169,12 +184,12 @@ export class NotificationsService {
 
   async remove(id: string): Promise<void> {
     await this.findOne(id);
-    await this.notificationModel.findByIdAndDelete(id).exec();
+    await this.requireMongo().findByIdAndDelete(id).exec();
   }
 
   // Delete all notifications for a recipient
   async removeAllForRecipient(recipientId: string): Promise<{ deleted: number }> {
-    const result = await this.notificationModel.deleteMany({ recipientId });
+    const result = await this.requireMongo().deleteMany({ recipientId });
     return { deleted: result.deletedCount };
   }
 }

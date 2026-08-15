@@ -1,7 +1,4 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
-// Load .env early so process.env contains values before module imports
-const dotenv = require('dotenv');
-dotenv.config({ path: '.env' });
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
@@ -31,8 +28,6 @@ import { SuperAdminModule } from './super-admin/super-admin.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { NormalizeRequestBodyMiddleware } from './common/middleware/normalize-request-body.middleware';
 
-const isFirestore = process.env.FIRESTORE === 'true';
-
 const appImports = [
   ConfigModule.forRoot({
     isGlobal: true,
@@ -41,18 +36,18 @@ const appImports = [
     expandVariables: false,
   }),
   PostgresModule,
-  MongoModule,
+  MongoModule.forRoot(),
   SchoolsModule,
   UsersModule,
   RolesModule,
   SchoolUsersModule,
-  NotificationsModule,
+  NotificationsModule.forRoot(),
   ContentModule,
   BusesModule,
   BusDriversModule,
   RoutesModule,
   SubscriptionsModule,
-  DashboardModule,
+  DashboardModule.forRoot(),
   AdminModule,
   FirebaseModule,
   AuthModule,

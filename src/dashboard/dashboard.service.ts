@@ -18,10 +18,19 @@ export class DashboardService {
     @InjectRepository(Subscription)
     private readonly subscriptionRepository: Repository<Subscription>,
     @InjectModel(Notification.name)
-    private readonly notificationModel: Model<NotificationDocument>,
+    private readonly notificationModel: Model<NotificationDocument> | null,
   ) {}
 
   async getDashboard(schoolId: string) {
+    const notificationQuery = this.notificationModel
+      ? this.notificationModel
+          .find({ 'data.schoolId': schoolId })
+          .sort({ createdAt: -1 })
+          .limit(20)
+          .lean()
+          .exec()
+      : Promise.resolve([]);
+
     const [buses, totalParents, activeSubscriptions, recentNotifications] =
       await Promise.all([
         this.busRepository.findBy({ schoolId }),
@@ -29,12 +38,7 @@ export class DashboardService {
         this.subscriptionRepository.count({
           where: { schoolId, status: SubscriptionStatus.ACTIVE },
         }),
-        this.notificationModel
-          .find({ 'data.schoolId': schoolId })
-          .sort({ createdAt: -1 })
-          .limit(20)
-          .lean()
-          .exec(),
+        notificationQuery,
       ]);
 
     const activeBuses = buses.filter((b) =>
