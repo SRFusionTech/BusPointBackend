@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "buspoint_backend",
   "version": "0.0.1",
   "description": "",
@@ -17,6 +17,8 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
+    "audit:map-data": "node scripts/audit-map-data.cjs",
+    "verify:map-pipeline": "node scripts/verify-map-pipeline.cjs",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",

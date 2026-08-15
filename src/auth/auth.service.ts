@@ -165,6 +165,7 @@ export class AuthService {
         path: parsed.pathname + parsed.search,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), ...headers },
+        timeout: 10_000,
       };
       const req = https.request(options, (res) => {
         let body = '';
@@ -172,6 +173,11 @@ export class AuthService {
         res.on('end', () => resolve(body));
       });
       req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('SMS provider request timed out'));
+      });
+      req.setTimeout(10_000);
       req.write(payload);
       req.end();
     });

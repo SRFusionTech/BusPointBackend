@@ -73,8 +73,10 @@ interface ParentLocationSnapshot {
 
 // ─── GPS heartbeat constants ──────────────────────────────────────────────────
 
-/** If no location update arrives within this window, mark bus as GPS_LOST. */
-const GPS_TIMEOUT_MS = 30_000;
+/** If no location update arrives within this window, mark bus as GPS_LOST.
+ *  90s (not 30s) so a bus stopped at a pickup does not false-flag when BG
+ *  distanceInterval (~8m) suppresses posts while stationary. */
+const GPS_TIMEOUT_MS = 90_000;
 const PARENT_LOCATION_CACHE_TTL_MS = 60_000;
 const PARENT_LIVE_LOCATION_TTL_MS = 120_000;
 
@@ -198,6 +200,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const timer = setTimeout(async () => {
       this.gpsHeartbeat.delete(busId);
       try {
+        const bus = await this.busRepository.findOneBy({ id: busId });
+        if (!bus || !this.isTripActive(bus.status)) return;
         await this.busRepository.update(busId, { status: BusStatus.GPS_LOST });
         this.server.to(`bus:${busId}`).emit('bus_status', {
           busId,
@@ -210,6 +214,13 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       }
     }, GPS_TIMEOUT_MS);
     this.gpsHeartbeat.set(busId, timer);
+  }
+
+  /** Restore trip phase after a GPS_LOST gap without forcing outbound `started`. */
+  private statusAfterGpsRecovery(bus: Bus): BusStatus {
+    if (bus.status !== BusStatus.GPS_LOST) return bus.status;
+    if (bus.activeDirection === 'return') return BusStatus.RETURNING;
+    return BusStatus.STARTED;
   }
 
   private distanceMeters(
@@ -535,11 +546,13 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       };
     }
 
+    const recoveredStatus = this.statusAfterGpsRecovery(bus);
+
     await this.busRepository.update(busId, {
       lastLat: latitude,
       lastLng: longitude,
       lastUpdated: incomingTime,
-      status: bus.status === BusStatus.GPS_LOST ? BusStatus.STARTED : bus.status,
+      status: recoveredStatus,
     });
 
     this.resetHeartbeat(busId);
@@ -558,14 +571,26 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       lng: longitude,
       ...(heading !== undefined ? { heading } : {}),
       timestamp: incomingTime.toISOString(),
-      ...this.tripProgress.buildRichPayload(busId, bus.activeDirection || 'outbound', bus.status, latitude, longitude),
+      status: recoveredStatus,
+      ...this.tripProgress.buildRichPayload(
+        busId,
+        bus.activeDirection || 'outbound',
+        recoveredStatus,
+        latitude,
+        longitude,
+      ),
     };
 
     this.server.to(`bus:${busId}`).emit('bus_location', broadcastPayload);
     await this.emitParentLocationsToDrivers(busId, { latitude, longitude });
 
-    const liveStatus = bus.status === BusStatus.GPS_LOST ? BusStatus.STARTED : bus.status;
-    await this.processStopGeofence(busId, latitude, longitude, bus.activeRouteId || bus.routeId, liveStatus);
+    await this.processStopGeofence(
+      busId,
+      latitude,
+      longitude,
+      bus.activeRouteId || bus.routeId,
+      recoveredStatus,
+    );
 
     return broadcastPayload;
   }
