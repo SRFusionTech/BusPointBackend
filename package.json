@@ -2,7 +2,7 @@
   "name": "buspoint-api",
   "version": "2.0.0",
   "description": "BusPoint backend API — real-time school bus tracking by SRFusion",
-  "author": "SRFusion <dev@srfusion.com>",
+  "author": "SRFusion <dev@srfusiontech.com>",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
