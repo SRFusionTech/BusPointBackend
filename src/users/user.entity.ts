@@ -6,8 +6,7 @@ import {
   UpdateDateColumn,
   Index,
 } from 'typeorm';
-
-export type UserRole = 'super_admin' | 'school_admin' | 'driver' | 'parent';
+import { Role } from '../common/enums/role.enum';
 
 @Entity('users')
 export class User {
@@ -21,8 +20,8 @@ export class User {
   @Column({ name: 'password_hash' })
   passwordHash!: string;
 
-  @Column({ type: 'varchar' })
-  role!: UserRole;
+  @Column({ type: 'enum', enum: Role })
+  role!: Role;
 
   @Index()
   @Column({ name: 'school_id', type: 'uuid', nullable: true, default: null })
@@ -31,10 +30,10 @@ export class User {
   @Column({ name: 'is_active', default: true })
   isActive!: boolean;
 
-  @Column({ name: 'full_name', nullable: true, default: null })
+  @Column({ name: 'full_name', type: 'varchar', nullable: true, default: null })
   fullName!: string | null;
 
-  @Column({ nullable: true, default: null })
+  @Column({ type: 'varchar', nullable: true, default: null })
   phone!: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

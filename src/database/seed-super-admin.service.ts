@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../users/user.entity';
+import { Role } from '../common/enums/role.enum';
 
 @Injectable()
 export class SeedSuperAdminService implements OnApplicationBootstrap {
@@ -34,7 +35,7 @@ export class SeedSuperAdminService implements OnApplicationBootstrap {
     await this.userRepo.save({
       email,
       passwordHash,
-      role: 'super_admin' as const,
+      role: Role.SUPER_ADMIN,
       schoolId: null,
       isActive: true,
     });
