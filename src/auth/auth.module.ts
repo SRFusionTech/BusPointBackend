@@ -7,18 +7,17 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from '../users/user.entity';
+import { RefreshToken } from './refresh-token.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, RefreshToken]),
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>('JWT_SECRET'),
-        signOptions: {
-          expiresIn: 60 * 60 * 24 * 7, // 7 days in seconds
-        },
+        // expiresIn is set per-call in auth.service using JWT_ACCESS_TTL_MINUTES
       }),
     }),
   ],

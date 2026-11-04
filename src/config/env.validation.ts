@@ -26,7 +26,12 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
 
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  JWT_EXPIRES_IN: z.string().default('7d'),
+
+  // Access token TTL in minutes (short-lived)
+  JWT_ACCESS_TTL_MINUTES: z.coerce.number().default(15),
+  // Refresh token TTL in days — separate for web and mobile
+  JWT_REFRESH_TTL_DAYS_WEB: z.coerce.number().default(7),
+  JWT_REFRESH_TTL_DAYS_MOBILE: z.coerce.number().default(30),
 
   // Super admin seed — read once on startup
   SUPER_ADMIN_EMAIL: z.string().email().optional(),
