@@ -13,6 +13,8 @@ import { User } from '../users/user.entity';
 import { Role } from '../common/enums/role.enum';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { UpdateSchoolDto } from './dto/update-school.dto';
+import { UpdateSchoolSettingsDto } from './dto/update-school-settings.dto';
+import { resolveSchoolSettings } from './school-settings';
 import { successResponse } from '../common/response/api-response';
 
 @Injectable()
@@ -97,6 +99,27 @@ export class SchoolsService {
 
     this.logger.log(`School updated: ${school.name} (${id})`);
     return successResponse(school, 'School updated successfully.');
+  }
+
+  async getSettings(id: string) {
+    const school = await this.schoolRepo.findOne({ where: { id } });
+    if (!school) throw new NotFoundException('School not found.');
+    return successResponse(resolveSchoolSettings(school.settings));
+  }
+
+  async updateSettings(id: string, dto: UpdateSchoolSettingsDto) {
+    const school = await this.schoolRepo.findOne({ where: { id } });
+    if (!school) throw new NotFoundException('School not found.');
+
+    // Drop undefined keys so a partial PATCH never erases stored values
+    const changes = Object.fromEntries(
+      Object.entries(dto).filter(([, v]) => v !== undefined),
+    );
+    school.settings = { ...(school.settings ?? {}), ...changes };
+    await this.schoolRepo.save(school);
+
+    this.logger.log(`School settings updated: ${school.name} (${id}) ${JSON.stringify(changes)}`);
+    return successResponse(resolveSchoolSettings(school.settings), 'Settings saved.');
   }
 
   async remove(id: string) {

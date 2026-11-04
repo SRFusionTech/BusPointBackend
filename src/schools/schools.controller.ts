@@ -5,6 +5,7 @@ import {
 import { SchoolsService } from './schools.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { UpdateSchoolDto } from './dto/update-school.dto';
+import { UpdateSchoolSettingsDto } from './dto/update-school-settings.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
 
@@ -32,6 +33,19 @@ export class SchoolsController {
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.schools.findOne(id);
+  }
+
+  @Get(':id/settings')
+  getSettings(@Param('id', ParseUUIDPipe) id: string) {
+    return this.schools.getSettings(id);
+  }
+
+  @Patch(':id/settings')
+  updateSettings(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSchoolSettingsDto,
+  ) {
+    return this.schools.updateSettings(id, dto);
   }
 
   @Patch(':id')

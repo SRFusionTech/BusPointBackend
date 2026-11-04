@@ -5,6 +5,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { SchoolSettings } from './school-settings';
 
 @Entity('schools')
 export class School {
@@ -22,6 +23,10 @@ export class School {
 
   @Column({ name: 'is_active', default: true })
   isActive!: boolean;
+
+  /** Sparse overrides only — read through resolveSchoolSettings() for defaults. */
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  settings!: Partial<SchoolSettings>;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

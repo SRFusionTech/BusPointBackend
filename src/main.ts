@@ -27,7 +27,10 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3010'],
+    origin: (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:3010')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean),
     credentials: true, // Required to send/receive cookies cross-origin
   });
 
