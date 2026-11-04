@@ -21,7 +21,11 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     I18nModule.forRoot({
       fallbackLanguage: 'en',
       loaderOptions: {
-        path: path.join(__dirname, '/i18n/'),
+        // In dev, read from source so watch mode doesn't break when dist is wiped.
+        // In prod, read from compiled dist (copied via nest-cli.json assets).
+        path: process.env.NODE_ENV === 'production'
+          ? path.join(__dirname, '/i18n/')
+          : path.join(__dirname, '../src/i18n/'),
         watch: process.env.NODE_ENV !== 'production',
       },
       resolvers: [
