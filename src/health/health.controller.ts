@@ -25,7 +25,7 @@ export class HealthController {
     return {
       ...result,
       app: {
-        name: 'BusPoint API',
+        name: 'BusPoint API — SRFusion',
         version: process.env.npm_package_version ?? '2.0.0',
         environment: process.env.NODE_ENV ?? 'development',
         uptime: `${Math.floor(process.uptime())}s`,

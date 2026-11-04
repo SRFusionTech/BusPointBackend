@@ -1,14 +1,12 @@
 {
-  "name": "BusPointBackend",
-  "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "name": "buspoint-api",
+  "version": "2.0.0",
+  "description": "BusPoint backend API — real-time school bus tracking by SRFusion",
+  "author": "SRFusion <dev@srfusion.com>",
   "private": true,
   "license": "UNLICENSED",
-  "type": "module",
   "scripts": {
     "build": "nest build",
-    "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
