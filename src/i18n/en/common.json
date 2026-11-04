@@ -1,0 +1,11 @@
+{
+  "not_found": "{resource} not found.",
+  "already_exists": "This record already exists.",
+  "created": "Created successfully.",
+  "updated": "Updated successfully.",
+  "deleted": "Deleted successfully.",
+  "invalid_uuid": "Invalid ID format.",
+  "invalid_payload": "Invalid request payload.",
+  "internal_error": "Something went wrong — please try again later.",
+  "success": "Success."
+}

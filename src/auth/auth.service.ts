@@ -4,10 +4,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Response } from 'express';
 import * as bcrypt from 'bcrypt';
+import { I18nService, I18nContext } from 'nestjs-i18n';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { User } from '../users/user.entity';
 import { Role } from '../common/enums/role.enum';
+import { I18nKey } from '../i18n/i18n.keys';
+import { successResponse } from '../common/response/api-response';
 
 const COOKIE_NAME = 'access_token';
 
@@ -32,13 +35,16 @@ export class AuthService {
     private readonly jwt: JwtService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly i18n: I18nService,
   ) {}
 
   async webLogin(dto: LoginDto, res: Response) {
     const user = await this.findAndVerify(dto);
 
     if (!WEB_ROLES.includes(user.role)) {
-      throw new UnauthorizedException('Access denied — use the mobile app');
+      throw new UnauthorizedException(
+        this.t(I18nKey.AUTH.WEB_ONLY),
+      );
     }
 
     return this.issueToken(user, res, 7);
@@ -48,15 +54,17 @@ export class AuthService {
     const user = await this.findAndVerify(dto);
 
     if (!MOBILE_ROLES.includes(user.role)) {
-      throw new UnauthorizedException('Access denied — use the web portal');
+      throw new UnauthorizedException(
+        this.t(I18nKey.AUTH.MOBILE_ONLY),
+      );
     }
 
-    return this.issueToken(user, res, 30); // longer session for mobile
+    return this.issueToken(user, res, 30);
   }
 
   logout(res: Response) {
     res.clearCookie(COOKIE_NAME, { path: '/', sameSite: 'strict', httpOnly: true });
-    return { message: 'Logged out' };
+    return successResponse(null, this.t(I18nKey.AUTH.LOGGED_OUT));
   }
 
   private async findAndVerify(dto: LoginDto): Promise<User> {
@@ -65,7 +73,7 @@ export class AuthService {
     });
 
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException(this.t(I18nKey.AUTH.INVALID_CREDENTIALS));
     }
 
     return user;
@@ -84,6 +92,17 @@ export class AuthService {
 
     this.logger.log(`Login: ${user.email} (${user.role})`);
 
-    return { role: user.role, email: user.email };
+    return successResponse(
+      { role: user.role, email: user.email },
+      this.t(I18nKey.COMMON.SUCCESS),
+    );
+  }
+
+  /** Translate using the current request's language (falls back to 'en'). */
+  private t(key: string, args?: Record<string, unknown>): string {
+    return this.i18n.translate(key, {
+      lang: I18nContext.current()?.lang ?? 'en',
+      args,
+    }) as string;
   }
 }
