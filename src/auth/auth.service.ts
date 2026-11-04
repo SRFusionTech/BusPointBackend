@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -6,6 +6,7 @@ import { Response } from 'express';
 import * as bcrypt from 'bcrypt';
 import { I18nService, I18nContext } from 'nestjs-i18n';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { User } from '../users/user.entity';
 import { Role } from '../common/enums/role.enum';
@@ -96,6 +97,24 @@ export class AuthService {
       { role: user.role, email: user.email },
       this.t(I18nKey.COMMON.SUCCESS),
     );
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.userRepo.findOne({ where: { id: userId, isActive: true } });
+    if (!user) throw new UnauthorizedException(this.t(I18nKey.AUTH.UNAUTHORIZED));
+
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!valid) throw new BadRequestException('Current password is incorrect.');
+
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException('New password must differ from current password.');
+    }
+
+    user.passwordHash = await bcrypt.hash(dto.newPassword, 12);
+    await this.userRepo.save(user);
+
+    this.logger.log(`Password changed: ${user.email}`);
+    return successResponse(null, this.t(I18nKey.COMMON.UPDATED));
   }
 
   /** Translate using the current request's language (falls back to 'en'). */
