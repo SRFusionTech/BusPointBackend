@@ -1,5 +1,6 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -11,6 +12,9 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
+  // Parse cookies — required for HttpOnly JWT
+  app.use(cookieParser());
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -20,8 +24,8 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3000'],
-    credentials: true,
+    origin: process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3010'],
+    credentials: true, // Required to send/receive cookies cross-origin
   });
 
   const port = process.env.PORT ?? 3000;

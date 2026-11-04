@@ -24,6 +24,13 @@ const envSchema = z.object({
   DB_LOGGING: z.coerce.boolean().default(false),
 
   CORS_ORIGINS: z.string().optional(),
+
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+  JWT_EXPIRES_IN: z.string().default('7d'),
+
+  // Super admin seed — read once on startup
+  SUPER_ADMIN_EMAIL: z.string().email().optional(),
+  SUPER_ADMIN_PASSWORD: z.string().min(8).optional(),
 }).refine(
   (data) =>
     !!data.DATABASE_URL ||

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { SeedSuperAdminService } from './seed-super-admin.service';
 
 @Module({
   imports: [
@@ -48,5 +49,6 @@ import { ConfigService } from '@nestjs/config';
       },
     }),
   ],
+  providers: [SeedSuperAdminService],
 })
 export class DatabaseModule {}
