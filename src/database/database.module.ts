@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { User } from '../users/user.entity';
 import { SeedSuperAdminService } from './seed-super-admin.service';
 
 @Module({
@@ -10,9 +11,8 @@ import { SeedSuperAdminService } from './seed-super-admin.service';
       useFactory: (config: ConfigService) => {
         const databaseUrl = config.get<string>('DATABASE_URL');
 
-        const ssl = config.get<boolean>('DB_SSL')
-          ? { rejectUnauthorized: false }
-          : false;
+        const sslEnabled = config.get<string>('DB_SSL') === 'true';
+        const ssl = sslEnabled ? { rejectUnauthorized: false } : false;
 
         const extra = {
           min: config.get<number>('DB_POOL_MIN') ?? 2,
@@ -32,6 +32,8 @@ import { SeedSuperAdminService } from './seed-super-admin.service';
           autoLoadEntities: true,
           extra,
           ssl,
+          // All timestamps stored and read as UTC
+          timezone: 'Z',
         };
 
         if (databaseUrl) {
@@ -48,6 +50,7 @@ import { SeedSuperAdminService } from './seed-super-admin.service';
         };
       },
     }),
+    TypeOrmModule.forFeature([User]),
   ],
   providers: [SeedSuperAdminService],
 })

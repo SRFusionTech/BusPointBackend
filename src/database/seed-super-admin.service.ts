@@ -1,18 +1,19 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
+import { User } from '../users/user.entity';
 
-/**
- * Runs once on startup.
- * If SUPER_ADMIN_EMAIL + SUPER_ADMIN_PASSWORD are set in .env,
- * creates the super admin user if it doesn't exist.
- *
- * Safe to run on every restart — it's idempotent.
- */
 @Injectable()
 export class SeedSuperAdminService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SeedSuperAdminService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {}
 
   async onApplicationBootstrap() {
     const email = this.config.get<string>('SUPER_ADMIN_EMAIL');
@@ -23,16 +24,21 @@ export class SeedSuperAdminService implements OnApplicationBootstrap {
       return;
     }
 
-    // TODO: once User entity is wired in, replace with:
-    // const existing = await this.userRepo.findOne({ where: { email } });
-    // if (existing) {
-    //   this.logger.debug(`Super admin already exists: ${email}`);
-    //   return;
-    // }
-    // const hash = await bcrypt.hash(password, 12);
-    // await this.userRepo.save({ email, passwordHash: hash, role: 'super_admin', schoolId: null });
-    // this.logger.log(`Super admin seeded: ${email}`);
+    const existing = await this.userRepo.findOne({ where: { email } });
+    if (existing) {
+      this.logger.debug(`Super admin already exists: ${email}`);
+      return;
+    }
 
-    this.logger.log(`Super admin seed ready for: ${email} (pending User entity)`);
+    const passwordHash = await bcrypt.hash(password, 12);
+    await this.userRepo.save({
+      email,
+      passwordHash,
+      role: 'super_admin' as const,
+      schoolId: null,
+      isActive: true,
+    });
+
+    this.logger.log(`✓ Super admin seeded: ${email}`);
   }
 }
