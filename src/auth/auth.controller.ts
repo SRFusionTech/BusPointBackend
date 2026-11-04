@@ -10,14 +10,32 @@ import { JwtPayload } from './strategies/jwt.strategy';
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  /**
+   * Web login — super_admin and school_admin only
+   * Used by: BusPoint web portal
+   */
   @Public()
-  @Post('login')
+  @Post('web/login')
   @HttpCode(HttpStatus.OK)
-  login(
+  webLogin(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    return this.auth.login(dto, res);
+    return this.auth.webLogin(dto, res);
+  }
+
+  /**
+   * Mobile login — driver and parent only
+   * Used by: BusPoint mobile app
+   */
+  @Public()
+  @Post('mobile/login')
+  @HttpCode(HttpStatus.OK)
+  mobileLogin(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.auth.mobileLogin(dto, res);
   }
 
   @Post('logout')
