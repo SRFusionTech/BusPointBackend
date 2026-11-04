@@ -17,6 +17,8 @@ import { UpdateSchoolDto } from './dto/update-school.dto';
 import { UpdateSchoolSettingsDto } from './dto/update-school-settings.dto';
 import { resolveSchoolSettings } from './school-settings';
 import { successResponse } from '../common/response/api-response';
+import { t } from '../i18n/translate';
+import { I18nKey } from '../i18n/i18n.keys';
 
 @Injectable()
 export class SchoolsService {
@@ -37,7 +39,7 @@ export class SchoolsService {
       where: { email: dto.adminEmail.toLowerCase() },
     });
     if (existing) {
-      throw new ConflictException(`An account with email ${dto.adminEmail} already exists.`);
+      throw new ConflictException(t(I18nKey.SCHOOL.ADMIN_EMAIL_EXISTS, { email: dto.adminEmail }));
     }
 
     const passwordHash = await bcrypt.hash(dto.adminPassword, 12);
@@ -80,7 +82,7 @@ export class SchoolsService {
         email: dto.adminEmail.toLowerCase(),
         name: dto.adminName,
       },
-    }, 'School created successfully.');
+    }, t(I18nKey.SCHOOL.CREATED));
   }
 
   async findAll() {
@@ -92,24 +94,24 @@ export class SchoolsService {
 
   async findOne(id: string) {
     const school = await this.schoolRepo.findOne({ where: { id } });
-    if (!school) throw new NotFoundException('School not found.');
+    if (!school) throw new NotFoundException(t(I18nKey.SCHOOL.NOT_FOUND));
     return successResponse(school);
   }
 
   async update(id: string, dto: UpdateSchoolDto) {
     const school = await this.schoolRepo.findOne({ where: { id } });
-    if (!school) throw new NotFoundException('School not found.');
+    if (!school) throw new NotFoundException(t(I18nKey.SCHOOL.NOT_FOUND));
 
     Object.assign(school, dto);
     await this.schoolRepo.save(school);
 
     this.logger.log(`School updated: ${school.name} (${id})`);
-    return successResponse(school, 'School updated successfully.');
+    return successResponse(school, t(I18nKey.SCHOOL.UPDATED));
   }
 
   async getSettings(id: string) {
     const school = await this.schoolRepo.findOne({ where: { id } });
-    if (!school) throw new NotFoundException('School not found.');
+    if (!school) throw new NotFoundException(t(I18nKey.SCHOOL.NOT_FOUND));
     const plans = await this.planRepo.find({ where: { isActive: true }, order: { createdAt: 'ASC' } });
     return successResponse({
       ...resolveSchoolSettings(school.settings),
@@ -121,13 +123,13 @@ export class SchoolsService {
 
   async updateSettings(id: string, dto: UpdateSchoolSettingsDto) {
     const school = await this.schoolRepo.findOne({ where: { id } });
-    if (!school) throw new NotFoundException('School not found.');
+    if (!school) throw new NotFoundException(t(I18nKey.SCHOOL.NOT_FOUND));
 
     // planId — validate it exists before assigning
     if (dto.planId !== undefined) {
       if (dto.planId !== null) {
         const plan = await this.planRepo.findOne({ where: { id: dto.planId, isActive: true } });
-        if (!plan) throw new NotFoundException('Plan not found.');
+        if (!plan) throw new NotFoundException(t(I18nKey.PLAN.NOT_FOUND));
       }
       school.planId = dto.planId;
     }
@@ -153,13 +155,13 @@ export class SchoolsService {
       ...resolveSchoolSettings(school.settings),
       planId: school.planId ?? null,
       planExpiresAt: school.planExpiresAt ?? null,
-    }, 'Settings saved.');
+    }, t(I18nKey.SCHOOL.SETTINGS_SAVED));
   }
 
   /** The school-admin's own school (branding + location). */
   async findMine(schoolId: string) {
     const school = await this.schoolRepo.findOne({ where: { id: schoolId } });
-    if (!school) throw new NotFoundException('School not found.');
+    if (!school) throw new NotFoundException(t(I18nKey.SCHOOL.NOT_FOUND));
     return successResponse({
       id: school.id,
       name: school.name,
@@ -176,19 +178,19 @@ export class SchoolsService {
    */
   async backfillLocation(schoolId: string, lat: number, lng: number) {
     const school = await this.schoolRepo.findOne({ where: { id: schoolId } });
-    if (!school) throw new NotFoundException('School not found.');
+    if (!school) throw new NotFoundException(t(I18nKey.SCHOOL.NOT_FOUND));
     if (school.lat !== null && school.lng !== null) {
-      throw new ConflictException('School location is already set.');
+      throw new ConflictException(t(I18nKey.SCHOOL.LOCATION_ALREADY_SET));
     }
     school.lat = lat;
     school.lng = lng;
     await this.schoolRepo.save(school);
-    return successResponse({ lat, lng }, 'School location saved.');
+    return successResponse({ lat, lng }, t(I18nKey.SCHOOL.LOCATION_SAVED));
   }
 
   async remove(id: string) {
     const school = await this.schoolRepo.findOne({ where: { id } });
-    if (!school) throw new NotFoundException('School not found.');
+    if (!school) throw new NotFoundException(t(I18nKey.SCHOOL.NOT_FOUND));
 
     // Safety check: prevent deleting a school that still has active users
     const activeUsers = await this.userRepo.count({
@@ -196,13 +198,13 @@ export class SchoolsService {
     });
     if (activeUsers > 0) {
       throw new BadRequestException(
-        `Cannot delete school with ${activeUsers} active user(s). Deactivate all users first.`,
+        t(I18nKey.SCHOOL.HAS_ACTIVE_USERS, { count: activeUsers }),
       );
     }
 
     await this.schoolRepo.remove(school);
     this.logger.log(`School deleted: ${id}`);
-    return successResponse(null, 'School deleted successfully.');
+    return successResponse(null, t(I18nKey.SCHOOL.DELETED));
   }
 
   async resetAdminPassword(schoolId: string) {
@@ -210,7 +212,7 @@ export class SchoolsService {
       where: { schoolId, role: Role.SCHOOL_ADMIN, isActive: true },
     });
     if (!admin) {
-      throw new NotFoundException('School admin not found for this school.');
+      throw new NotFoundException(t(I18nKey.SCHOOL.ADMIN_NOT_FOUND));
     }
 
     const tempPassword = this.generatePassword();
@@ -222,7 +224,7 @@ export class SchoolsService {
     // Return plaintext once — caller must show it to the super admin immediately
     return successResponse(
       { email: admin.email, tempPassword },
-      'Password reset successfully. Share this password with the school admin.',
+      t(I18nKey.SCHOOL.ADMIN_PASSWORD_RESET),
     );
   }
 

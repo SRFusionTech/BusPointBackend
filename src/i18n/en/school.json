@@ -1,0 +1,13 @@
+{
+  "not_found": "School not found.",
+  "created": "School created.",
+  "updated": "School updated.",
+  "deleted": "School deleted.",
+  "settings_saved": "Settings saved.",
+  "admin_email_exists": "An account with email {email} already exists.",
+  "admin_not_found": "No school admin found for this school.",
+  "admin_password_reset": "Password reset. Share the new password with the school admin.",
+  "has_active_users": "Can't delete a school with {count} active user(s). Deactivate them first.",
+  "location_already_set": "School location is already set.",
+  "location_saved": "School location saved."
+}

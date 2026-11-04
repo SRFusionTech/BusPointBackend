@@ -14,6 +14,8 @@ import { CreateRouteDto } from './dto/create-route.dto';
 import { UpdateRouteDto } from './dto/update-route.dto';
 import { BulkStopsDto } from './dto/bulk-stops.dto';
 import { successResponse } from '../common/response/api-response';
+import { t } from '../i18n/translate';
+import { I18nKey } from '../i18n/i18n.keys';
 
 @Injectable()
 export class RoutesService {
@@ -35,7 +37,7 @@ export class RoutesService {
     const route = this.routeRepo.create({ name: dto.name, schoolId });
     const saved = await this.routeRepo.save(route);
     this.logger.log(`Route created: ${saved.name} (${saved.id})`);
-    return successResponse(saved, 'Route created successfully.');
+    return successResponse(saved, t(I18nKey.ROUTE.CREATED));
   }
 
   async findAll(schoolId: string) {
@@ -78,7 +80,7 @@ export class RoutesService {
       where: { id, schoolId },
       relations: { stops: true },
     });
-    if (!route) throw new NotFoundException('Route not found.');
+    if (!route) throw new NotFoundException(t(I18nKey.ROUTE.NOT_FOUND));
 
     route.stops = route.stops.sort((a, b) => a.stopOrder - b.stopOrder);
     return successResponse(route);
@@ -86,22 +88,22 @@ export class RoutesService {
 
   async update(schoolId: string, id: string, dto: UpdateRouteDto) {
     const route = await this.routeRepo.findOne({ where: { id, schoolId } });
-    if (!route) throw new NotFoundException('Route not found.');
+    if (!route) throw new NotFoundException(t(I18nKey.ROUTE.NOT_FOUND));
 
     Object.assign(route, dto);
     const saved = await this.routeRepo.save(route);
-    return successResponse(saved, 'Route updated successfully.');
+    return successResponse(saved, t(I18nKey.ROUTE.UPDATED));
   }
 
   async remove(schoolId: string, id: string) {
     const route = await this.routeRepo.findOne({ where: { id, schoolId } });
-    if (!route) throw new NotFoundException('Route not found.');
+    if (!route) throw new NotFoundException(t(I18nKey.ROUTE.NOT_FOUND));
 
     route.isActive = false;
     await this.routeRepo.save(route);
     await this.busRepo.update({ schoolId, routeId: id }, { routeId: null });
     await this.busRepo.update({ schoolId, returnRouteId: id }, { returnRouteId: null });
-    return successResponse(null, 'Route removed successfully.');
+    return successResponse(null, t(I18nKey.ROUTE.REMOVED));
   }
 
   /**
@@ -110,11 +112,11 @@ export class RoutesService {
    */
   async bulkReplaceStops(schoolId: string, routeId: string, dto: BulkStopsDto) {
     const route = await this.routeRepo.findOne({ where: { id: routeId, schoolId } });
-    if (!route) throw new NotFoundException('Route not found.');
+    if (!route) throw new NotFoundException(t(I18nKey.ROUTE.NOT_FOUND));
 
     const school = await this.schoolRepo.findOne({ where: { id: schoolId } });
     if (!school || school.lat === null || school.lng === null) {
-      throw new BadRequestException('Your school has no map location yet, so routes can’t start from it. Contact BusPoint support.');
+      throw new BadRequestException(t(I18nKey.ROUTE.SCHOOL_LOCATION_MISSING));
     }
 
     const rows: Partial<RouteStop>[] = [
@@ -134,6 +136,6 @@ export class RoutesService {
 
     const updated = await this.stopRepo.find({ where: { routeId }, order: { stopOrder: 'ASC' } });
     this.logger.log(`Route ${routeId}: saved ${rows.length} stops`);
-    return successResponse(updated, 'Route saved.');
+    return successResponse(updated, t(I18nKey.ROUTE.SAVED));
   }
 }

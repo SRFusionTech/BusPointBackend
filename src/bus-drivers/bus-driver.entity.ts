@@ -6,7 +6,10 @@ import {
   Index,
 } from 'typeorm';
 
+// At most one active assignment per driver and per bus — enforced by the DB, not just the service
 @Entity('bus_drivers')
+@Index('UQ_bus_drivers_active_driver', ['driverId'], { unique: true, where: '"is_active" = true' })
+@Index('UQ_bus_drivers_active_bus', ['busId'], { unique: true, where: '"is_active" = true' })
 export class BusDriver {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

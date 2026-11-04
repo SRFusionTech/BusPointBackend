@@ -14,6 +14,11 @@ import { Role } from '../common/enums/role.enum';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { successResponse } from '../common/response/api-response';
+import { t } from '../i18n/translate';
+import { I18nKey } from '../i18n/i18n.keys';
+
+/** Phone is the login for these roles, so it must be unique across them (matches the users phone index). */
+const PHONE_LOGIN_ROLES = [Role.DRIVER, Role.PARENT];
 
 @Injectable()
 export class DriversService {
@@ -30,10 +35,12 @@ export class DriversService {
 
   async create(schoolId: string, dto: CreateDriverDto) {
     const existing = await this.userRepo.findOne({
-      where: { phone: dto.phone, role: Role.DRIVER },
+      where: { phone: dto.phone, role: In(PHONE_LOGIN_ROLES) },
     });
     if (existing) {
-      throw new ConflictException(`A driver with phone number ${dto.phone} already exists.`);
+      throw new ConflictException(
+        t(existing.role === Role.PARENT ? I18nKey.DRIVER.PHONE_TAKEN_PARENT : I18nKey.DRIVER.PHONE_TAKEN_DRIVER, { phone: dto.phone }),
+      );
     }
 
     const tempPassword = this.generatePassword();
@@ -60,7 +67,7 @@ export class DriversService {
         createdAt: saved.createdAt,
         tempPassword,
       },
-      'Driver created successfully.',
+      t(I18nKey.DRIVER.CREATED),
     );
   }
 
@@ -92,7 +99,7 @@ export class DriversService {
       where: { id, schoolId, role: Role.DRIVER },
       select: { id: true, fullName: true, phone: true, isActive: true, createdAt: true, updatedAt: true },
     });
-    if (!driver) throw new NotFoundException('Driver not found.');
+    if (!driver) throw new NotFoundException(t(I18nKey.DRIVER.NOT_FOUND));
     return successResponse(driver);
   }
 
@@ -100,14 +107,16 @@ export class DriversService {
     const driver = await this.userRepo.findOne({
       where: { id, schoolId, role: Role.DRIVER },
     });
-    if (!driver) throw new NotFoundException('Driver not found.');
+    if (!driver) throw new NotFoundException(t(I18nKey.DRIVER.NOT_FOUND));
 
     if (dto.phone && dto.phone !== driver.phone) {
       const conflict = await this.userRepo.findOne({
-        where: { phone: dto.phone, role: Role.DRIVER },
+        where: { phone: dto.phone, role: In(PHONE_LOGIN_ROLES) },
       });
       if (conflict) {
-        throw new ConflictException(`Phone number ${dto.phone} is already in use.`);
+        throw new ConflictException(
+          t(conflict.role === Role.PARENT ? I18nKey.DRIVER.PHONE_TAKEN_PARENT : I18nKey.DRIVER.PHONE_TAKEN_DRIVER, { phone: dto.phone }),
+        );
       }
     }
 
@@ -115,7 +124,7 @@ export class DriversService {
     await this.userRepo.save(driver);
     return successResponse(
       { id: driver.id, fullName: driver.fullName, phone: driver.phone, isActive: driver.isActive },
-      'Driver updated successfully.',
+      t(I18nKey.DRIVER.UPDATED),
     );
   }
 
@@ -123,7 +132,7 @@ export class DriversService {
     const driver = await this.userRepo.findOne({
       where: { id, schoolId, role: Role.DRIVER },
     });
-    if (!driver) throw new NotFoundException('Driver not found.');
+    if (!driver) throw new NotFoundException(t(I18nKey.DRIVER.NOT_FOUND));
 
     const tempPassword = this.generatePassword();
     driver.passwordHash = await bcrypt.hash(tempPassword, 12);
@@ -132,7 +141,7 @@ export class DriversService {
     this.logger.log(`Password reset for driver: ${driver.fullName} (${id})`);
     return successResponse(
       { tempPassword },
-      'Password reset successfully. Share this password with the driver.',
+      t(I18nKey.DRIVER.PASSWORD_RESET),
     );
   }
 
@@ -140,12 +149,12 @@ export class DriversService {
     const driver = await this.userRepo.findOne({
       where: { id, schoolId, role: Role.DRIVER },
     });
-    if (!driver) throw new NotFoundException('Driver not found.');
+    if (!driver) throw new NotFoundException(t(I18nKey.DRIVER.NOT_FOUND));
 
     driver.isActive = false;
     await this.userRepo.save(driver);
     await this.busDriverRepo.update({ driverId: id, isActive: true }, { isActive: false });
-    return successResponse(null, 'Driver deactivated successfully.');
+    return successResponse(null, t(I18nKey.DRIVER.DEACTIVATED));
   }
 
   private generatePassword(): string {

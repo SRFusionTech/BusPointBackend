@@ -8,8 +8,7 @@ import { UpdateRouteDto } from './dto/update-route.dto';
 import { BulkStopsDto } from './dto/bulk-stops.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { SchoolId } from '../common/decorators/school-id.decorator';
 
 @Controller('routes')
 @Roles(Role.SCHOOL_ADMIN)
@@ -18,41 +17,41 @@ export class RoutesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateRouteDto) {
-    return this.routes.create(user.schoolId!, dto);
+  create(@SchoolId() schoolId: string, @Body() dto: CreateRouteDto) {
+    return this.routes.create(schoolId, dto);
   }
 
   @Get()
-  findAll(@CurrentUser() user: JwtPayload) {
-    return this.routes.findAll(user.schoolId!);
+  findAll(@SchoolId() schoolId: string) {
+    return this.routes.findAll(schoolId);
   }
 
   @Get(':id')
-  findOne(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.routes.findOne(user.schoolId!, id);
+  findOne(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.routes.findOne(schoolId, id);
   }
 
   @Patch(':id')
   update(
-    @CurrentUser() user: JwtPayload,
+    @SchoolId() schoolId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRouteDto,
   ) {
-    return this.routes.update(user.schoolId!, id, dto);
+    return this.routes.update(schoolId, id, dto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  remove(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.routes.remove(user.schoolId!, id);
+  remove(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.routes.remove(schoolId, id);
   }
 
   @Put(':id/stops')
   bulkReplaceStops(
-    @CurrentUser() user: JwtPayload,
+    @SchoolId() schoolId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: BulkStopsDto,
   ) {
-    return this.routes.bulkReplaceStops(user.schoolId!, id, dto);
+    return this.routes.bulkReplaceStops(schoolId, id, dto);
   }
 }

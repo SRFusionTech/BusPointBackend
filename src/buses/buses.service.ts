@@ -9,9 +9,12 @@ import { In, Repository } from 'typeorm';
 import { Bus } from './bus.entity';
 import { BusDriver } from '../bus-drivers/bus-driver.entity';
 import { User } from '../users/user.entity';
+import { Route } from '../routes/route.entity';
 import { CreateBusDto } from './dto/create-bus.dto';
 import { UpdateBusDto } from './dto/update-bus.dto';
 import { successResponse } from '../common/response/api-response';
+import { t } from '../i18n/translate';
+import { I18nKey } from '../i18n/i18n.keys';
 
 @Injectable()
 export class BusesService {
@@ -24,14 +27,25 @@ export class BusesService {
     private readonly busDriverRepo: Repository<BusDriver>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(Route)
+    private readonly routeRepo: Repository<Route>,
   ) {}
 
+  /** Route ids come from the client — make sure they're this school's active routes. */
+  private async assertOwnRoutes(schoolId: string, ...routeIds: (string | null | undefined)[]) {
+    const ids = [...new Set(routeIds.filter((id): id is string => !!id))];
+    if (ids.length === 0) return;
+    const count = await this.routeRepo.count({ where: { id: In(ids), schoolId, isActive: true } });
+    if (count !== ids.length) throw new NotFoundException(t(I18nKey.ROUTE.NOT_FOUND));
+  }
+
   async create(schoolId: string, dto: CreateBusDto) {
+    await this.assertOwnRoutes(schoolId, dto.routeId, dto.returnRouteId);
     const existing = await this.busRepo.findOne({
       where: { plateNumber: dto.plateNumber },
     });
     if (existing) {
-      throw new ConflictException(`A bus with plate number "${dto.plateNumber}" already exists.`);
+      throw new ConflictException(t(I18nKey.BUS.PLATE_EXISTS, { plate: dto.plateNumber }));
     }
 
     const bus = this.busRepo.create({
@@ -46,7 +60,7 @@ export class BusesService {
     const saved = await this.busRepo.save(bus);
 
     this.logger.log(`Bus created: ${saved.name} (${saved.id}) for school ${schoolId}`);
-    return successResponse({ ...saved, driver: null }, 'Bus created successfully.');
+    return successResponse({ ...saved, driver: null }, t(I18nKey.BUS.CREATED));
   }
 
   async findAll(schoolId: string) {
@@ -73,18 +87,19 @@ export class BusesService {
 
   async findOne(schoolId: string, id: string) {
     const bus = await this.busRepo.findOne({ where: { id, schoolId } });
-    if (!bus) throw new NotFoundException('Bus not found.');
+    if (!bus) throw new NotFoundException(t(I18nKey.BUS.NOT_FOUND));
     return successResponse(bus);
   }
 
   async update(schoolId: string, id: string, dto: UpdateBusDto) {
     const bus = await this.busRepo.findOne({ where: { id, schoolId } });
-    if (!bus) throw new NotFoundException('Bus not found.');
+    if (!bus) throw new NotFoundException(t(I18nKey.BUS.NOT_FOUND));
+    await this.assertOwnRoutes(schoolId, dto.routeId, dto.returnRouteId);
 
     if (dto.plateNumber && dto.plateNumber !== bus.plateNumber) {
       const conflict = await this.busRepo.findOne({ where: { plateNumber: dto.plateNumber } });
       if (conflict) {
-        throw new ConflictException(`Plate number "${dto.plateNumber}" is already in use.`);
+        throw new ConflictException(t(I18nKey.BUS.PLATE_EXISTS, { plate: dto.plateNumber }));
       }
     }
 
@@ -92,12 +107,12 @@ export class BusesService {
     const saved = await this.busRepo.save(bus);
 
     this.logger.log(`Bus updated: ${saved.name} (${id})`);
-    return successResponse(saved, 'Bus updated successfully.');
+    return successResponse(saved, t(I18nKey.BUS.UPDATED));
   }
 
   async remove(schoolId: string, id: string) {
     const bus = await this.busRepo.findOne({ where: { id, schoolId } });
-    if (!bus) throw new NotFoundException('Bus not found.');
+    if (!bus) throw new NotFoundException(t(I18nKey.BUS.NOT_FOUND));
 
     bus.isActive = false;
     await this.busRepo.save(bus);
@@ -105,6 +120,6 @@ export class BusesService {
     await this.busDriverRepo.update({ busId: id, isActive: true }, { isActive: false });
 
     this.logger.log(`Bus deactivated: ${bus.name} (${id})`);
-    return successResponse(null, 'Bus removed successfully.');
+    return successResponse(null, t(I18nKey.BUS.REMOVED));
   }
 }

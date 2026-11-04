@@ -1,0 +1,9 @@
+{
+  "not_found": "Driver not found.",
+  "created": "Driver added.",
+  "updated": "Driver updated.",
+  "deactivated": "Driver deactivated.",
+  "password_reset": "Password reset. Share the new password with the driver.",
+  "phone_taken_driver": "{phone} is already used by another driver account.",
+  "phone_taken_parent": "{phone} is already used by a parent account."
+}

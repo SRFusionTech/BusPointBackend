@@ -1,0 +1,8 @@
+{
+  "not_found": "Plan not found.",
+  "name_exists": "A plan named \"{name}\" already exists.",
+  "created": "Plan created.",
+  "updated": "Plan updated.",
+  "deleted": "Plan deleted.",
+  "in_use": "Can't delete this plan — {count} school(s) are on it. Move them to another plan first."
+}

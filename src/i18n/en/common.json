@@ -7,5 +7,8 @@
   "invalid_uuid": "Invalid ID format.",
   "invalid_payload": "Invalid request payload.",
   "internal_error": "Something went wrong — please try again later.",
-  "success": "Success."
+  "success": "Success.",
+  "forbidden": "You do not have permission to access this resource.",
+  "duplicate": "A record with these details already exists.",
+  "no_school": "Your account is not linked to a school."
 }

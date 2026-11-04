@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Response, Request } from 'express';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -94,7 +94,7 @@ export class AuthService {
 
   async mobileLogin(dto: MobileLoginDto, res: Response) {
     const user = await this.userRepo.findOne({
-      where: { phone: dto.phone, isActive: true },
+      where: { phone: dto.phone, isActive: true, role: In(MOBILE_ROLES) },
     });
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
       throw new UnauthorizedException(this.t(I18nKey.AUTH.INVALID_CREDENTIALS));

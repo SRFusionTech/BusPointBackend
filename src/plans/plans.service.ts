@@ -5,6 +5,8 @@ import { Plan } from './plan.entity';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 import { successResponse } from '../common/response/api-response';
+import { t } from '../i18n/translate';
+import { I18nKey } from '../i18n/i18n.keys';
 
 const SEED_PLAN = { name: 'Pro', description: 'Full platform access — the default plan for all schools.' };
 
@@ -28,7 +30,7 @@ export class PlansService implements OnApplicationBootstrap {
 
   async create(dto: CreatePlanDto) {
     const existing = await this.planRepo.findOne({ where: { name: dto.name } });
-    if (existing) throw new ConflictException(`A plan named "${dto.name}" already exists.`);
+    if (existing) throw new ConflictException(t(I18nKey.PLAN.NAME_EXISTS, { name: dto.name }));
 
     const plan = await this.planRepo.save(this.planRepo.create({
       name: dto.name,
@@ -36,7 +38,7 @@ export class PlansService implements OnApplicationBootstrap {
     }));
 
     this.logger.log(`Plan created: ${plan.name} (${plan.id})`);
-    return successResponse(plan, 'Plan created.');
+    return successResponse(plan, t(I18nKey.PLAN.CREATED));
   }
 
   async findAll() {
@@ -51,29 +53,29 @@ export class PlansService implements OnApplicationBootstrap {
 
   async findOne(id: string) {
     const plan = await this.planRepo.findOne({ where: { id } });
-    if (!plan) throw new NotFoundException('Plan not found.');
+    if (!plan) throw new NotFoundException(t(I18nKey.PLAN.NOT_FOUND));
     return successResponse(plan);
   }
 
   async update(id: string, dto: UpdatePlanDto) {
     const plan = await this.planRepo.findOne({ where: { id } });
-    if (!plan) throw new NotFoundException('Plan not found.');
+    if (!plan) throw new NotFoundException(t(I18nKey.PLAN.NOT_FOUND));
 
     if (dto.name && dto.name !== plan.name) {
       const conflict = await this.planRepo.findOne({ where: { name: dto.name } });
-      if (conflict) throw new ConflictException(`A plan named "${dto.name}" already exists.`);
+      if (conflict) throw new ConflictException(t(I18nKey.PLAN.NAME_EXISTS, { name: dto.name }));
     }
 
     Object.assign(plan, dto);
     await this.planRepo.save(plan);
 
     this.logger.log(`Plan updated: ${plan.name} (${id})`);
-    return successResponse(plan, 'Plan updated.');
+    return successResponse(plan, t(I18nKey.PLAN.UPDATED));
   }
 
   async remove(id: string) {
     const plan = await this.planRepo.findOne({ where: { id } });
-    if (!plan) throw new NotFoundException('Plan not found.');
+    if (!plan) throw new NotFoundException(t(I18nKey.PLAN.NOT_FOUND));
 
     // Guard: don't delete if schools are assigned
     const schoolCount: { count: string }[] = await this.planRepo.query(
@@ -83,12 +85,12 @@ export class PlansService implements OnApplicationBootstrap {
     const count = parseInt(schoolCount[0]?.count ?? '0', 10);
     if (count > 0) {
       throw new BadRequestException(
-        `Cannot delete plan — ${count} school(s) are assigned to it. Reassign them first.`,
+        t(I18nKey.PLAN.IN_USE, { count }),
       );
     }
 
     await this.planRepo.remove(plan);
     this.logger.log(`Plan deleted: ${id}`);
-    return successResponse(null, 'Plan deleted.');
+    return successResponse(null, t(I18nKey.PLAN.DELETED));
   }
 }

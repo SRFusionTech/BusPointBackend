@@ -14,6 +14,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { I18nBridge } from './i18n/translate';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     DriversModule,
   ],
   providers: [
+    I18nBridge,
     // JWT guard applied globally — use @Public() to bypass
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     // Roles guard applied globally — use @Roles(...) on controllers/handlers

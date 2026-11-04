@@ -3,8 +3,7 @@ import { IsLatitude, IsLongitude } from 'class-validator';
 import { SchoolsService } from './schools.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { SchoolId } from '../common/decorators/school-id.decorator';
 
 class SchoolLocationDto {
   @IsLatitude()
@@ -21,12 +20,12 @@ export class MySchoolController {
   constructor(private readonly schools: SchoolsService) {}
 
   @Get()
-  get(@CurrentUser() user: JwtPayload) {
-    return this.schools.findMine(user.schoolId!);
+  get(@SchoolId() schoolId: string) {
+    return this.schools.findMine(schoolId);
   }
 
   @Patch('location')
-  setLocation(@CurrentUser() user: JwtPayload, @Body() dto: SchoolLocationDto) {
-    return this.schools.backfillLocation(user.schoolId!, dto.lat, dto.lng);
+  setLocation(@SchoolId() schoolId: string, @Body() dto: SchoolLocationDto) {
+    return this.schools.backfillLocation(schoolId, dto.lat, dto.lng);
   }
 }

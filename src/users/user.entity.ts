@@ -33,7 +33,8 @@ export class User {
   @Column({ name: 'full_name', type: 'varchar', nullable: true, default: null })
   fullName!: string | null;
 
-  @Index({ unique: true, where: '"phone" IS NOT NULL' })
+  // Phone is the mobile-app login, so it's unique among drivers/parents only; admins' phones are contact info
+  @Index({ unique: true, where: `"phone" IS NOT NULL AND "role" IN ('driver', 'parent')` })
   @Column({ type: 'varchar', nullable: true, default: null })
   phone!: string | null;
 

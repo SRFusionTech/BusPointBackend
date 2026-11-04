@@ -7,8 +7,7 @@ import { CreateBusDto } from './dto/create-bus.dto';
 import { UpdateBusDto } from './dto/update-bus.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { SchoolId } from '../common/decorators/school-id.decorator';
 import { BusDriversService } from '../bus-drivers/bus-drivers.service';
 import { AssignDriverDto } from '../bus-drivers/dto/assign-driver.dto';
 
@@ -22,53 +21,53 @@ export class BusesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateBusDto) {
-    return this.buses.create(user.schoolId!, dto);
+  create(@SchoolId() schoolId: string, @Body() dto: CreateBusDto) {
+    return this.buses.create(schoolId, dto);
   }
 
   @Get()
-  findAll(@CurrentUser() user: JwtPayload) {
-    return this.buses.findAll(user.schoolId!);
+  findAll(@SchoolId() schoolId: string) {
+    return this.buses.findAll(schoolId);
   }
 
   @Get(':id')
-  findOne(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.buses.findOne(user.schoolId!, id);
+  findOne(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.buses.findOne(schoolId, id);
   }
 
   @Patch(':id')
   update(
-    @CurrentUser() user: JwtPayload,
+    @SchoolId() schoolId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBusDto,
   ) {
-    return this.buses.update(user.schoolId!, id, dto);
+    return this.buses.update(schoolId, id, dto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  remove(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.buses.remove(user.schoolId!, id);
+  remove(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.buses.remove(schoolId, id);
   }
 
   @Post(':id/driver')
   @HttpCode(HttpStatus.OK)
   assignDriver(
-    @CurrentUser() user: JwtPayload,
+    @SchoolId() schoolId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignDriverDto,
   ) {
-    return this.busDrivers.assign(user.schoolId!, id, dto);
+    return this.busDrivers.assign(schoolId, id, dto);
   }
 
   @Delete(':id/driver')
   @HttpCode(HttpStatus.OK)
-  unassignDriver(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.busDrivers.unassign(user.schoolId!, id);
+  unassignDriver(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.busDrivers.unassign(schoolId, id);
   }
 
   @Get(':id/driver')
-  getCurrentDriver(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.busDrivers.getCurrentDriver(user.schoolId!, id);
+  getCurrentDriver(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.busDrivers.getCurrentDriver(schoolId, id);
   }
 }

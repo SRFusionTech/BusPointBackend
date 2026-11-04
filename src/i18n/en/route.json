@@ -1,0 +1,8 @@
+{
+  "not_found": "Route not found.",
+  "created": "Route created.",
+  "updated": "Route updated.",
+  "removed": "Route deleted.",
+  "saved": "Route saved.",
+  "school_location_missing": "Your school has no map location yet, so routes can't start from it. Contact BusPoint support."
+}

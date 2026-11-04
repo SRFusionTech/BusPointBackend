@@ -1,0 +1,12 @@
+{
+  "not_found": "Bus not found.",
+  "plate_exists": "A bus with plate number \"{plate}\" already exists.",
+  "created": "Bus added.",
+  "updated": "Bus updated.",
+  "removed": "Bus removed.",
+  "driver_assigned": "Driver assigned.",
+  "driver_unassigned": "Driver unassigned.",
+  "driver_already_here": "This driver is already assigned to this bus.",
+  "no_driver": "No driver is assigned to this bus.",
+  "driver_on_other_bus": "{driver} is already assigned to {bus}. Unassign them there first."
+}

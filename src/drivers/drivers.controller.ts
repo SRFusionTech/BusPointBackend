@@ -7,8 +7,7 @@ import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { SchoolId } from '../common/decorators/school-id.decorator';
 
 @Controller('drivers')
 @Roles(Role.SCHOOL_ADMIN)
@@ -17,38 +16,38 @@ export class DriversController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateDriverDto) {
-    return this.drivers.create(user.schoolId!, dto);
+  create(@SchoolId() schoolId: string, @Body() dto: CreateDriverDto) {
+    return this.drivers.create(schoolId, dto);
   }
 
   @Get()
-  findAll(@CurrentUser() user: JwtPayload) {
-    return this.drivers.findAll(user.schoolId!);
+  findAll(@SchoolId() schoolId: string) {
+    return this.drivers.findAll(schoolId);
   }
 
   @Get(':id')
-  findOne(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.drivers.findOne(user.schoolId!, id);
+  findOne(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.drivers.findOne(schoolId, id);
   }
 
   @Patch(':id')
   update(
-    @CurrentUser() user: JwtPayload,
+    @SchoolId() schoolId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDriverDto,
   ) {
-    return this.drivers.update(user.schoolId!, id, dto);
+    return this.drivers.update(schoolId, id, dto);
   }
 
   @Post(':id/reset-password')
   @HttpCode(HttpStatus.OK)
-  resetPassword(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.drivers.resetPassword(user.schoolId!, id);
+  resetPassword(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.drivers.resetPassword(schoolId, id);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  remove(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.drivers.remove(user.schoolId!, id);
+  remove(@SchoolId() schoolId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.drivers.remove(schoolId, id);
   }
 }
