@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { SchoolsModule } from './schools/schools.module';
+import { RolesGuard } from './common/guards/roles.guard';
 import { I18nModule, AcceptLanguageResolver, QueryResolver, HeaderResolver } from 'nestjs-i18n';
 import * as path from 'path';
 import { validateEnv } from './config/env.validation';
@@ -31,10 +33,13 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     DatabaseModule,
     HealthModule,
     AuthModule,
+    SchoolsModule,
   ],
   providers: [
     // JWT guard applied globally — use @Public() to bypass
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Roles guard applied globally — use @Roles(...) on controllers/handlers
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AppModule {}
