@@ -7,6 +7,8 @@ export const I18nKey = {
     MOBILE_ONLY: 'auth.mobile_only',
     LOGGED_OUT: 'auth.logged_out',
     ACCOUNT_INACTIVE: 'auth.account_inactive',
+    PLAN_EXPIRED_APP: 'auth.plan_expired_app',
+    PLAN_EXPIRED_ADMIN: 'auth.plan_expired_admin',
   },
   COMMON: {
     NOT_FOUND: 'common.not_found',

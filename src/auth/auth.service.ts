@@ -1,6 +1,8 @@
 import {
   Injectable,
   UnauthorizedException,
+  HttpException,
+  HttpStatus,
   Logger,
   BadRequestException,
 } from '@nestjs/common';
@@ -12,11 +14,13 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { I18nService, I18nContext } from 'nestjs-i18n';
 import { LoginDto } from './dto/login.dto';
+import { MobileLoginDto } from './dto/mobile-login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfigService } from '@nestjs/config';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { User } from '../users/user.entity';
 import { RefreshToken } from './refresh-token.entity';
+import { School } from '../schools/school.entity';
 import { Role } from '../common/enums/role.enum';
 import { I18nKey } from '../i18n/i18n.keys';
 import { successResponse } from '../common/response/api-response';
@@ -69,6 +73,8 @@ export class AuthService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(RefreshToken)
     private readonly refreshRepo: Repository<RefreshToken>,
+    @InjectRepository(School)
+    private readonly schoolRepo: Repository<School>,
     private readonly i18n: I18nService,
     private readonly config: ConfigService,
   ) {
@@ -82,14 +88,21 @@ export class AuthService {
     if (!WEB_ROLES.includes(user.role)) {
       throw new UnauthorizedException(this.t(I18nKey.AUTH.WEB_ONLY));
     }
+    await this.assertPlanActive(user, 'admin');
     return this.issueTokens(user, res, this.refreshTtlDaysWeb);
   }
 
-  async mobileLogin(dto: LoginDto, res: Response) {
-    const user = await this.findAndVerify(dto);
+  async mobileLogin(dto: MobileLoginDto, res: Response) {
+    const user = await this.userRepo.findOne({
+      where: { phone: dto.phone, isActive: true },
+    });
+    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
+      throw new UnauthorizedException(this.t(I18nKey.AUTH.INVALID_CREDENTIALS));
+    }
     if (!MOBILE_ROLES.includes(user.role)) {
       throw new UnauthorizedException(this.t(I18nKey.AUTH.MOBILE_ONLY));
     }
+    await this.assertPlanActive(user, 'app');
     return this.issueTokens(user, res, this.refreshTtlDaysMobile);
   }
 
@@ -137,6 +150,9 @@ export class AuthService {
       ? this.refreshTtlDaysWeb
       : this.refreshTtlDaysMobile;
 
+    const audience = WEB_ROLES.includes(user.role) ? 'admin' : 'app';
+    await this.assertPlanActive(user, audience);
+
     return this.issueTokens(user, res, refreshTtlDays);
   }
 
@@ -147,6 +163,27 @@ export class AuthService {
     }
     this.clearCookies(res);
     return successResponse(null, this.t(I18nKey.AUTH.LOGGED_OUT));
+  }
+
+  async me(userId: string) {
+    const user = await this.userRepo.findOne({ where: { id: userId, isActive: true } });
+    if (!user) throw new UnauthorizedException(this.t(I18nKey.AUTH.UNAUTHORIZED));
+
+    const school = user.schoolId
+      ? await this.schoolRepo.findOne({
+          where: { id: user.schoolId },
+          select: { id: true, name: true, logoUrl: true },
+        })
+      : null;
+
+    return successResponse({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      schoolId: user.schoolId,
+      fullName: user.fullName,
+      school: school ? { id: school.id, name: school.name, logoUrl: school.logoUrl } : null,
+    });
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
@@ -205,6 +242,21 @@ export class AuthService {
       email: user.email,
       accessTokenExpiresAt, // Unix ms — store client-side for proactive refresh
     });
+  }
+
+  /** Throws 402 if the user's school has a past planExpiresAt. No-op for super admins (no schoolId). */
+  private async assertPlanActive(user: User, audience: 'admin' | 'app'): Promise<void> {
+    if (!user.schoolId) return; // super_admin — no school, always active
+    const school = await this.schoolRepo.findOne({
+      where: { id: user.schoolId },
+      select: { planExpiresAt: true },
+    });
+    if (school?.planExpiresAt && school.planExpiresAt < new Date()) {
+      const key = audience === 'admin'
+        ? I18nKey.AUTH.PLAN_EXPIRED_ADMIN
+        : I18nKey.AUTH.PLAN_EXPIRED_APP;
+      throw new HttpException(this.t(key), HttpStatus.PAYMENT_REQUIRED);
+    }
   }
 
   private async findAndVerify(dto: LoginDto): Promise<User> {

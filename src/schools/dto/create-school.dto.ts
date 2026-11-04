@@ -1,8 +1,11 @@
 import {
   IsEmail,
+  IsLatitude,
+  IsLongitude,
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   MinLength,
   IsPhoneNumber,
 } from 'class-validator';
@@ -17,8 +20,20 @@ export class CreateSchoolDto {
   address!: string;
 
   @IsOptional()
+  @IsLatitude()
+  lat?: number;
+
+  @IsOptional()
+  @IsLongitude()
+  lng?: number;
+
+  @IsOptional()
   @IsUrl()
   logoUrl?: string;
+
+  @IsOptional()
+  @IsUUID()
+  planId?: string;
 
   // Admin account
   @IsEmail()

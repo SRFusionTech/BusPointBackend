@@ -13,9 +13,9 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Index({ unique: true })
-  @Column({ unique: true })
-  email!: string;
+  @Index({ unique: true, where: '"email" IS NOT NULL' })
+  @Column({ type: 'varchar', nullable: true, default: null, unique: false })
+  email!: string | null;
 
   @Column({ name: 'password_hash' })
   passwordHash!: string;
@@ -33,6 +33,7 @@ export class User {
   @Column({ name: 'full_name', type: 'varchar', nullable: true, default: null })
   fullName!: string | null;
 
+  @Index({ unique: true, where: '"phone" IS NOT NULL' })
   @Column({ type: 'varchar', nullable: true, default: null })
   phone!: string | null;
 

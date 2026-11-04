@@ -7,7 +7,7 @@ import { Role } from '../../common/enums/role.enum';
 
 export interface JwtPayload {
   sub: string;
-  email: string;
+  email: string | null;
   role: Role;
   schoolId: string | null;
 }

@@ -5,13 +5,13 @@ import {
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { MobileLoginDto } from './dto/mobile-login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { Role } from '../common/enums/role.enum';
-import { successResponse } from '../common/response/api-response';
 
 @Controller('auth')
 export class AuthController {
@@ -25,11 +25,11 @@ export class AuthController {
     return this.auth.webLogin(dto, res);
   }
 
-  /** Mobile login — DRIVER and PARENT only */
+  /** Mobile login — DRIVER and PARENT only, uses phone + password */
   @Public()
   @Post('mobile/login')
   @HttpCode(HttpStatus.OK)
-  mobileLogin(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
+  mobileLogin(@Body() dto: MobileLoginDto, @Res({ passthrough: true }) res: Response) {
     return this.auth.mobileLogin(dto, res);
   }
 
@@ -52,12 +52,7 @@ export class AuthController {
 
   @Get('me')
   me(@CurrentUser() user: JwtPayload) {
-    return successResponse({
-      id: user.sub,
-      email: user.email,
-      role: user.role,
-      schoolId: user.schoolId,
-    });
+    return this.auth.me(user.sub);
   }
 
   /** Change password — not available to SUPER_ADMIN */
