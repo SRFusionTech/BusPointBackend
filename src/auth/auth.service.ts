@@ -134,6 +134,11 @@ export class AuthService {
     }
 
     const user = stored.user;
+    // Account deleted after login → session is gone (401, not a 500 the app would keep retrying).
+    if (!user) {
+      await this.refreshRepo.delete({ id: stored.id });
+      throw new UnauthorizedException('Account no longer exists. Please log in again.');
+    }
     if (!user.isActive) {
       await this.refreshRepo.delete({ userId: user.id });
       throw new UnauthorizedException(this.t(I18nKey.AUTH.ACCOUNT_INACTIVE));
