@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Not, Repository } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { Bus } from '../buses/bus.entity';
 import { BusDriver } from '../bus-drivers/bus-driver.entity';
@@ -37,6 +37,8 @@ import { initialEngineState, processPoints, type EngineState, type EngineStop, t
 import { computeEtas } from './engine/eta';
 import { bearingDeg, distanceM } from './engine/geo';
 import { presenceOf } from './engine/presence';
+import { decodeLegs, roadDistances, roadView } from './engine/road';
+import { RoadRoutesService } from './road-routes.service';
 
 type EventRow = { type: TripEventType; at: Date; payload: Record<string, unknown> };
 
@@ -74,7 +76,48 @@ export class TripsService {
     @InjectRepository(SchoolClass) private readonly classRepo: Repository<SchoolClass>,
     @InjectRepository(ClassSection) private readonly sectionRepo: Repository<ClassSection>,
     private readonly changes: TripChanges,
+    private readonly roads: RoadRoutesService,
   ) {}
+
+  /** Trips whose road lookup is running / failed recently (tripId → time), to avoid hammering the API. */
+  private readonly roadAttempts = new Map<string, number>();
+
+  /**
+   * Road path already saved on an earlier trip with exactly the same stops (same route + direction,
+   * stops unchanged). Means OSRM / Google is only asked when a route is new or its stops were edited.
+   */
+  private async savedRoadLegs(tripId: string, stops: TripStop[]): Promise<string[] | null> {
+    const trip = await this.tripRepo.findOne({ where: { id: tripId } });
+    if (!trip) return null;
+    const candidates = await this.tripRepo.find({
+      where: { routeId: trip.routeId, direction: trip.direction, roadLegs: Not(IsNull()) },
+      order: { startedAt: 'DESC' },
+      take: 3,
+    });
+    if (candidates.length === 0) return null;
+    const key = (list: { lat: number; lng: number }[]) => list.map((x) => `${x.lat.toFixed(5)},${x.lng.toFixed(5)}`).join(';');
+    const mine = key(stops);
+    const theirStops = await this.tripStopRepo.find({ where: { tripId: In(candidates.map((c) => c.id)) }, order: { seq: 'ASC' } });
+    for (const c of candidates) {
+      if (key(theirStops.filter((x) => x.tripId === c.id)) === mine && c.roadLegs?.length === stops.length - 1) return c.roadLegs;
+    }
+    return null;
+  }
+
+  /** Fetch the road path for a running trip in the background, then push a fresh snapshot. */
+  private attachRoad(tripId: string) {
+    const last = this.roadAttempts.get(tripId);
+    if (last && Date.now() - last < 5 * 60_000) return;
+    this.roadAttempts.set(tripId, Date.now());
+    void (async () => {
+      const stops = await this.tripStopRepo.find({ where: { tripId }, order: { seq: 'ASC' } });
+      const legs = (await this.savedRoadLegs(tripId, stops)) ?? (await this.roads.legs(stops.map((s) => ({ lat: s.lat, lng: s.lng }))));
+      if (!legs) return;
+      await this.tripRepo.update({ id: tripId }, { roadLegs: legs });
+      this.roadAttempts.delete(tripId);
+      this.changes.changed(tripId);
+    })().catch((err) => this.logger.warn(`Road path for trip ${tripId} failed: ${(err as Error).message}`));
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // Driver: start / locations / end / active
@@ -172,6 +215,7 @@ export class TripsService {
 
     this.logger.log(`Trip ${trip.id} started: bus ${bus.id}, ${chosen.direction}, route ${route.id}`);
     this.changes.changed(trip.id);
+    this.attachRoad(trip.id);
     return successResponse(await this.snapshotOne(trip), t(I18nKey.TRIP.STARTED));
   }
 
@@ -256,6 +300,8 @@ export class TripsService {
     });
 
     this.changes.changed(trip.id);
+    // Trips started before this feature / while the Routes API was down get their road path late.
+    if (trip.status === 'in_progress' && !trip.roadLegs) this.attachRoad(trip.id);
     return successResponse(await this.snapshotOne(trip), t(I18nKey.TRIP.LOCATIONS_SAVED));
   }
 
@@ -592,6 +638,11 @@ export class TripsService {
             skipped: tStops.filter((s) => s.status === 'skipped').length,
             pending: tStops.filter((s) => s.status === 'pending').length,
           },
+          road: roadView(
+            decodeLegs(trip.roadLegs, tStops.length),
+            tStops,
+            onTrip && trip.lastLat != null && trip.lastLng != null ? { lat: trip.lastLat, lng: trip.lastLng } : null,
+          ),
           atStopId: onTrip ? engine.atStopId : null,
           nextStopId: onTrip ? next?.id ?? null : null,
           alerts: this.alertsOf(trip, onTrip, stationaryMin),
@@ -802,7 +853,8 @@ export class TripsService {
   /** Live ETA + remaining distance on pending stops; cleared on the rest. */
   private applyEtas(trip: Trip, stops: TripStop[], settings: TrackingSettings) {
     const bus = trip.lastLat != null && trip.lastLng != null ? { lat: trip.lastLat, lng: trip.lastLng } : null;
-    const etas = computeEtas(stops, bus, trip.lastSpeedKmh, trip.lastPingAt ?? new Date(), settings);
+    const road = roadDistances(decodeLegs(trip.roadLegs, stops.length), stops, bus, settings.roadFactor);
+    const etas = computeEtas(stops, bus, trip.lastSpeedKmh, trip.lastPingAt ?? new Date(), settings, road);
     for (const s of stops) {
       const e = etas.get(s.id);
       s.etaAt = s.status === 'pending' && e ? e.etaAt : null;

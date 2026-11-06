@@ -15,7 +15,7 @@ export interface StopEta {
 
 /**
  * ETA + remaining road distance for every pending stop, from the bus position.
- * distance = bus → next stop, then stop → stop (straight line × road factor).
+ * distance = along the real road when known, else bus → next stop, then stop → stop (straight line × road factor).
  * time     = distance ÷ trusted speed + dwell for each stop in between.
  */
 export function computeEtas(
@@ -24,6 +24,8 @@ export function computeEtas(
   speedKmh: number | null,
   base: Date,
   s: TrackingSettings,
+  /** Real road distance from the bus per stop (m); straight line × roadFactor when absent. */
+  road: Map<string, number> | null = null,
 ): Map<string, StopEta> {
   const out = new Map<string, StopEta>();
   if (!bus) return out;
@@ -33,6 +35,8 @@ export function computeEtas(
   let cumM = 0;
   pending.forEach((stop, i) => {
     cumM += distanceM(prev, stop) * s.roadFactor;
+    const roadM = road?.get(stop.id);
+    if (roadM != null) cumM = roadM;
     const seconds = (cumM / 1000 / speed) * 3600 + i * s.dwellPerStopSec;
     out.set(stop.id, { etaAt: new Date(base.getTime() + seconds * 1000), distanceM: Math.round(cumM) });
     prev = stop;

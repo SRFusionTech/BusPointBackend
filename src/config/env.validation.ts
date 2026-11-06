@@ -33,6 +33,11 @@ const envSchema = z.object({
   JWT_REFRESH_TTL_DAYS_WEB: z.coerce.number().default(7),
   JWT_REFRESH_TTL_DAYS_MOBILE: z.coerce.number().default(30),
 
+  // Road-following trip paths: OSRM (free) is used; override the server with OSRM_URL (e.g. self-hosted).
+  OSRM_URL: z.string().optional(),
+  // Optional paid fallback when OSRM fails (Google Routes API). Leave unset to never call Google.
+  GOOGLE_MAPS_SERVER_KEY: z.string().optional(),
+
   // Super admin seed — read once on startup
   SUPER_ADMIN_EMAIL: z.string().email().optional(),
   SUPER_ADMIN_PASSWORD: z.string().min(8).optional(),

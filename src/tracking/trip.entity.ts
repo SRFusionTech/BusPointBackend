@@ -111,6 +111,13 @@ export class Trip {
   @Column({ name: 'alerts_ack_at', type: 'timestamptz', nullable: true, default: null })
   alertsAckAt!: Date | null;
 
+  /**
+   * Road path between consecutive stops (Google encoded polylines), `roadLegs[i]` = stop seq i → i+1.
+   * Fetched once in the background after start; null = not fetched (maps fall back to straight lines).
+   */
+  @Column({ name: 'road_legs', type: 'jsonb', nullable: true, default: null })
+  roadLegs!: string[] | null;
+
   /** Stop-engine state (consecutive-inside counters, distance ref, speed…), survives restarts. */
   @Column({ name: 'engine_state', type: 'jsonb', default: () => "'{}'::jsonb" })
   engineState!: EngineState;

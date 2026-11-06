@@ -1,4 +1,5 @@
 import type { StopKind, TripDirection } from './engine/direction';
+import { truncateAhead, type RoadView } from './engine/road';
 
 /**
  * PRIVACY FILTER for parents. A parent may see:
@@ -39,6 +40,7 @@ export interface FullTripLike {
   atStopId: string | null;
   nextStopId: string | null;
   stops: FullStopLike[];
+  road?: RoadView | null;
 }
 
 export type ParentStop =
@@ -79,6 +81,8 @@ export interface ParentTripView {
   /** Other stops before mine (count only). */
   stopsBeforeMine: { total: number; pending: number };
   stops: ParentStop[];
+  /** Road line bus → (my stop / school), encoded polyline. Never extends past what the parent may see. */
+  road: { ahead: string | null } | null;
 }
 
 const hiddenId = (seq: number) => `hidden-${seq}`;
@@ -129,6 +133,11 @@ export function buildParentView(trip: FullTripLike, myRouteStopId: string | null
   const myDone = !!mine && mine.status !== 'pending';
   // Drop: once my child is off the bus, stop showing where the bus goes next.
   const showBus = onTrip && !(trip.direction === 'drop' && myDone);
+  // Line ends at the furthest pending stop the parent's map shows (their stop or the school).
+  const lineEnd = trip.stops
+    .filter((s) => s.status === 'pending' && (s === mine || s.kind === 'school'))
+    .reduce<number | null>((max, s) => (max == null || s.seq > max ? s.seq : max), null);
+  const road = showBus && trip.road && lineEnd != null ? { ahead: truncateAhead(trip.road, lineEnd) } : null;
   const before = mine ? trip.stops.filter((s) => s.seq < mine.seq && s.kind === 'stop') : [];
 
   return {
@@ -149,5 +158,6 @@ export function buildParentView(trip: FullTripLike, myRouteStopId: string | null
     nextStopId: showBus ? publicId(trip.nextStopId) : null,
     stopsBeforeMine: { total: before.length, pending: before.filter((s) => s.status === 'pending').length },
     stops,
+    road,
   };
 }

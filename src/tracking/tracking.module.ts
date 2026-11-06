@@ -16,6 +16,7 @@ import { TripsService } from './trips.service';
 import { TripMonitorService } from './trip-monitor.service';
 import { TripsController } from './trips.controller';
 import { TripChanges } from './trip-changes';
+import { RoadRoutesService } from './road-routes.service';
 import { ParentTripsService } from './parent-trips.service';
 import { TrackingGateway } from './tracking.gateway';
 import { AuthModule } from '../auth/auth.module';
@@ -30,7 +31,7 @@ import { AuthModule } from '../auth/auth.module';
     ]),
   ],
   controllers: [TripsController],
-  providers: [TripChanges, TripsService, ParentTripsService, TripMonitorService, TrackingGateway],
+  providers: [TripChanges, RoadRoutesService, TripsService, ParentTripsService, TripMonitorService, TrackingGateway],
   exports: [TripsService],
 })
 export class TrackingModule {}
