@@ -300,8 +300,6 @@ export class TripsService {
     });
 
     this.changes.changed(trip.id);
-    // Trips started before this feature / while the Routes API was down get their road path late.
-    if (trip.status === 'in_progress' && !trip.roadLegs) this.attachRoad(trip.id);
     return successResponse(await this.snapshotOne(trip), t(I18nKey.TRIP.LOCATIONS_SAVED));
   }
 
@@ -573,6 +571,8 @@ export class TripsService {
   async snapshots(trips: Trip[], opts: { now?: Date }) {
     if (trips.length === 0) return [];
     const now = opts.now ?? new Date();
+    // Running trips without a road path (started before deploy / lookup failed): fetch it now, in the background.
+    for (const trip of trips) if (trip.status === 'in_progress' && !trip.roadLegs) this.attachRoad(trip.id);
     const tripIds = trips.map((x) => x.id);
 
     const [stops, buses, drivers] = await Promise.all([
