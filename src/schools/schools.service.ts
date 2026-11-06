@@ -169,6 +169,7 @@ export class SchoolsService {
       logoUrl: school.logoUrl,
       lat: school.lat,
       lng: school.lng,
+      subscriptionManagedBy: resolveSchoolSettings(school.settings).subscriptionManagedBy,
     });
   }
 

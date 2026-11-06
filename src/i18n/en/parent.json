@@ -1,0 +1,12 @@
+{
+  "not_found": "Parent not found.",
+  "created": "Parent added.",
+  "updated": "Parent updated.",
+  "deactivated": "Parent deactivated.",
+  "password_reset": "Password reset. Share the new password with the parent.",
+  "phone_taken_driver": "{phone} is already used by a driver account.",
+  "phone_taken_parent": "{phone} is already used by another parent account.",
+  "stop_not_found": "That pickup point doesn't belong to this school.",
+  "no_stop_assigned": "No pickup point assigned yet. Contact your school to get one assigned before signing in.",
+  "subscription_expired": "Your subscription has expired. Contact your school to renew it."
+}

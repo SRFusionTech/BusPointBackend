@@ -1,6 +1,7 @@
 import {
   Injectable,
   UnauthorizedException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Logger,
@@ -9,7 +10,6 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Response, Request } from 'express';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { I18nService, I18nContext } from 'nestjs-i18n';
@@ -21,32 +21,13 @@ import { JwtPayload } from './strategies/jwt.strategy';
 import { User } from '../users/user.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { School } from '../schools/school.entity';
+import { RouteStop } from '../routes/route-stop.entity';
+import { BusDriver } from '../bus-drivers/bus-driver.entity';
+import { Bus } from '../buses/bus.entity';
+import { SchoolClass } from '../classes/school-class.entity';
 import { Role } from '../common/enums/role.enum';
 import { I18nKey } from '../i18n/i18n.keys';
 import { successResponse } from '../common/response/api-response';
-
-const ACCESS_COOKIE = 'access_token';
-const REFRESH_COOKIE = 'refresh_token';
-
-function accessCookieOptions(maxAgeMs: number) {
-  return {
-    httpOnly: true,
-    sameSite: 'strict' as const,
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: maxAgeMs,
-  };
-}
-
-function refreshCookieOptions(maxAgeDays: number) {
-  return {
-    httpOnly: true,
-    sameSite: 'strict' as const,
-    secure: process.env.NODE_ENV === 'production',
-    path: '/api/auth', // scope refresh cookie to auth routes only
-    maxAge: 1000 * 60 * 60 * 24 * maxAgeDays,
-  };
-}
 
 function hashToken(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex');
@@ -75,6 +56,14 @@ export class AuthService {
     private readonly refreshRepo: Repository<RefreshToken>,
     @InjectRepository(School)
     private readonly schoolRepo: Repository<School>,
+    @InjectRepository(RouteStop)
+    private readonly stopRepo: Repository<RouteStop>,
+    @InjectRepository(BusDriver)
+    private readonly busDriverRepo: Repository<BusDriver>,
+    @InjectRepository(Bus)
+    private readonly busRepo: Repository<Bus>,
+    @InjectRepository(SchoolClass)
+    private readonly classRepo: Repository<SchoolClass>,
     private readonly i18n: I18nService,
     private readonly config: ConfigService,
   ) {
@@ -83,36 +72,45 @@ export class AuthService {
     this.refreshTtlDaysMobile = this.config.get<number>('JWT_REFRESH_TTL_DAYS_MOBILE')!;
   }
 
-  async webLogin(dto: LoginDto, res: Response) {
+  async webLogin(dto: LoginDto) {
     const user = await this.findAndVerify(dto);
     if (!WEB_ROLES.includes(user.role)) {
       throw new UnauthorizedException(this.t(I18nKey.AUTH.WEB_ONLY));
     }
     await this.assertPlanActive(user, 'admin');
-    return this.issueTokens(user, res, this.refreshTtlDaysWeb);
+    return this.issueTokens(user, this.refreshTtlDaysWeb);
   }
 
-  async mobileLogin(dto: MobileLoginDto, res: Response) {
+  async mobileLogin(dto: MobileLoginDto) {
     const user = await this.userRepo.findOne({
-      where: { phone: dto.phone, isActive: true, role: In(MOBILE_ROLES) },
+      where: { phone: dto.phone, role: In(MOBILE_ROLES) },
     });
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
-      throw new UnauthorizedException(this.t(I18nKey.AUTH.INVALID_CREDENTIALS));
+      throw new UnauthorizedException(this.t(I18nKey.AUTH.INVALID_MOBILE_CREDENTIALS));
     }
     if (!MOBILE_ROLES.includes(user.role)) {
       throw new UnauthorizedException(this.t(I18nKey.AUTH.MOBILE_ONLY));
     }
+    if (!user.isActive) {
+      throw new ForbiddenException(this.t(I18nKey.AUTH.ACCOUNT_INACTIVE));
+    }
+    if (user.role === Role.PARENT) {
+      await this.assertPickupPointAssigned(user);
+      this.assertParentSubscriptionActive(user);
+    }
+    if (user.role === Role.DRIVER) {
+      await this.assertDriverRouteAssigned(user);
+    }
     await this.assertPlanActive(user, 'app');
-    return this.issueTokens(user, res, this.refreshTtlDaysMobile);
+    return this.issueTokens(user, this.refreshTtlDaysMobile);
   }
 
   /**
-   * Silent refresh — called with the refresh_token cookie.
+   * Silent refresh — called with the refresh token the client stored at login.
    * Rotates the refresh token on every use (old one deleted).
    * If the same refresh token is used twice → wipe all sessions (reuse attack).
    */
-  async refresh(req: Request, res: Response) {
-    const rawToken: string | undefined = req.cookies?.[REFRESH_COOKIE];
+  async refresh(rawToken?: string) {
     if (!rawToken) {
       throw new UnauthorizedException('No refresh token.');
     }
@@ -132,14 +130,12 @@ export class AuthService {
 
     if (stored.expiresAt < new Date()) {
       await this.refreshRepo.delete({ id: stored.id });
-      this.clearCookies(res);
       throw new UnauthorizedException('Refresh token expired. Please log in again.');
     }
 
     const user = stored.user;
     if (!user.isActive) {
       await this.refreshRepo.delete({ userId: user.id });
-      this.clearCookies(res);
       throw new UnauthorizedException(this.t(I18nKey.AUTH.ACCOUNT_INACTIVE));
     }
 
@@ -150,18 +146,16 @@ export class AuthService {
       ? this.refreshTtlDaysWeb
       : this.refreshTtlDaysMobile;
 
-    const audience = WEB_ROLES.includes(user.role) ? 'admin' : 'app';
+    const audience = MOBILE_ROLES.includes(user.role) ? 'app' : 'admin';
     await this.assertPlanActive(user, audience);
 
-    return this.issueTokens(user, res, refreshTtlDays);
+    return this.issueTokens(user, refreshTtlDays);
   }
 
-  async logout(req: Request, res: Response) {
-    const rawToken: string | undefined = req.cookies?.[REFRESH_COOKIE];
+  async logout(rawToken?: string) {
     if (rawToken) {
       await this.refreshRepo.delete({ tokenHash: hashToken(rawToken) });
     }
-    this.clearCookies(res);
     return successResponse(null, this.t(I18nKey.AUTH.LOGGED_OUT));
   }
 
@@ -176,13 +170,33 @@ export class AuthService {
         })
       : null;
 
+    const pickupStop = user.role === Role.PARENT && user.routeStopId
+      ? await this.stopRepo.findOne({
+          where: { id: user.routeStopId },
+          select: { id: true, name: true, address: true, lat: true, lng: true },
+        })
+      : null;
+
+    const bus = user.role === Role.DRIVER ? await this.findDriverBus(user.id) : null;
+
     return successResponse({
       id: user.id,
       email: user.email,
+      phone: user.phone,
       role: user.role,
       schoolId: user.schoolId,
       fullName: user.fullName,
       school: school ? { id: school.id, name: school.name, logoUrl: school.logoUrl } : null,
+      ...(user.role === Role.PARENT && {
+        pickupStop: pickupStop
+          ? { id: pickupStop.id, name: pickupStop.name, address: pickupStop.address, lat: pickupStop.lat, lng: pickupStop.lng }
+          : null,
+        subscriptionExpiresAt: user.subscriptionExpiresAt,
+        child: await this.childSummary(user),
+      }),
+      ...(user.role === Role.DRIVER && {
+        bus: bus ? { id: bus.id, name: bus.name, plateNumber: bus.plateNumber } : null,
+      }),
     });
   }
 
@@ -209,7 +223,12 @@ export class AuthService {
 
   // ─── Private helpers ────────────────────────────────────────────────────────
 
-  private async issueTokens(user: User, res: Response, refreshTtlDays: number) {
+  /**
+   * Stateless JWT for every client (web + mobile): both tokens are returned in the
+   * body; the client sends `Authorization: Bearer <accessToken>` and posts the
+   * refresh token to /auth/refresh and /auth/logout.
+   */
+  private async issueTokens(user: User, refreshTtlDays: number) {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -220,7 +239,6 @@ export class AuthService {
     // Access token
     const accessToken = this.jwt.sign(payload, { expiresIn: this.accessTtlMs / 1000 });
     const accessTokenExpiresAt = Date.now() + this.accessTtlMs;
-    res.cookie(ACCESS_COOKIE, accessToken, accessCookieOptions(this.accessTtlMs));
 
     // Refresh token
     const rawRefresh = generateRefreshToken();
@@ -232,15 +250,15 @@ export class AuthService {
         expiresAt,
       }),
     );
-    res.cookie(REFRESH_COOKIE, rawRefresh, refreshCookieOptions(refreshTtlDays));
 
     this.logger.log(`Auth: ${user.email} (${user.role})`);
 
-    // Return expiry timestamp so the client can proactively refresh before expiry
     return successResponse({
       role: user.role,
       email: user.email,
       accessTokenExpiresAt, // Unix ms — store client-side for proactive refresh
+      accessToken,
+      refreshToken: rawRefresh,
     });
   }
 
@@ -259,6 +277,51 @@ export class AuthService {
     }
   }
 
+  /**
+   * A parent must have a pickup point to use the app. Re-checks the stop still
+   * exists (not just that routeStopId is set) — stops are replaced wholesale
+   * whenever a school admin edits a route, which can leave a stale id behind.
+   */
+  private async assertPickupPointAssigned(user: User): Promise<void> {
+    const stop = user.routeStopId
+      ? await this.stopRepo.findOne({ where: { id: user.routeStopId } })
+      : null;
+    if (!stop) {
+      throw new ForbiddenException(this.t(I18nKey.PARENT.NO_STOP_ASSIGNED));
+    }
+  }
+
+  /** A driver must be assigned to a bus that itself has a route, or they have nothing to drive. */
+  private async assertDriverRouteAssigned(user: User): Promise<void> {
+    const bus = await this.findDriverBus(user.id);
+    if (!bus || (!bus.routeId && !bus.returnRouteId)) {
+      throw new ForbiddenException(this.t(I18nKey.DRIVER.NO_ROUTE_ASSIGNED));
+    }
+  }
+
+  /** Parent's child with class/section names resolved from the school's class master. */
+  private async childSummary(user: User) {
+    const schoolClass = user.childClassId !== null && user.schoolId
+      ? await this.classRepo.findOne({ where: { id: user.childClassId, schoolId: user.schoolId }, relations: { sections: true } })
+      : null;
+    const section = schoolClass?.sections.find((s) => s.id === user.childSectionId) ?? null;
+    return { name: user.childName, class: schoolClass?.name ?? null, section: section?.name ?? null };
+  }
+
+  private async findDriverBus(driverId: string): Promise<Bus | null> {
+    const assignment = await this.busDriverRepo.findOne({
+      where: { driverId, isActive: true },
+    });
+    return assignment ? this.busRepo.findOne({ where: { id: assignment.busId } }) : null;
+  }
+
+  /** A parent's own subscription (set by a school/both-managed school) blocks login once past its expiry. */
+  private assertParentSubscriptionActive(user: User): void {
+    if (user.subscriptionExpiresAt && user.subscriptionExpiresAt < new Date()) {
+      throw new HttpException(this.t(I18nKey.PARENT.SUBSCRIPTION_EXPIRED), HttpStatus.PAYMENT_REQUIRED);
+    }
+  }
+
   private async findAndVerify(dto: LoginDto): Promise<User> {
     const user = await this.userRepo.findOne({
       where: { email: dto.email.toLowerCase(), isActive: true },
@@ -267,11 +330,6 @@ export class AuthService {
       throw new UnauthorizedException(this.t(I18nKey.AUTH.INVALID_CREDENTIALS));
     }
     return user;
-  }
-
-  private clearCookies(res: Response) {
-    res.clearCookie(ACCESS_COOKIE, { path: '/', sameSite: 'strict', httpOnly: true });
-    res.clearCookie(REFRESH_COOKIE, { path: '/api/auth', sameSite: 'strict', httpOnly: true });
   }
 
   private t(key: string, args?: Record<string, unknown>): string {

@@ -9,10 +9,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from '../users/user.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { School } from '../schools/school.entity';
+import { RouteStop } from '../routes/route-stop.entity';
+import { BusDriver } from '../bus-drivers/bus-driver.entity';
+import { Bus } from '../buses/bus.entity';
+import { SchoolClass } from '../classes/school-class.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, RefreshToken, School]),
+    TypeOrmModule.forFeature([User, RefreshToken, School, RouteStop, BusDriver, Bus, SchoolClass]),
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],

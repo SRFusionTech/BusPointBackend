@@ -1,0 +1,16 @@
+{
+  "not_found": "Class not found.",
+  "created": "Class added.",
+  "updated": "Class updated.",
+  "deleted": "Class deleted.",
+  "name_exists": "Class \"{name}\" already exists in this school.",
+  "in_use": "This class is assigned to {count} parent(s). Move them to another class first.",
+  "invalid_order": "The order must list every class of this school exactly once.",
+  "section_duplicate": "Section \"{name}\" is already added to this class.",
+  "section_name_required": "Section name can't be empty.",
+  "section_not_found": "That section doesn't belong to this class.",
+  "section_in_use": "A section you removed is assigned to {count} parent(s). Move them to another section first.",
+  "section_required": "Select the child's section.",
+  "sections_required": "Add at least one section to this class.",
+  "class_required": "Select the child's class."
+}

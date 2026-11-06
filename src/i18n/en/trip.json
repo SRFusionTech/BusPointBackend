@@ -1,0 +1,17 @@
+{
+  "no_bus": "You are not assigned to a bus. Ask the school admin to assign one.",
+  "no_route": "Your bus has no route yet. Ask the school admin to set one.",
+  "route_empty": "Your bus route has no stops yet.",
+  "not_at_start": "You are {school} from the school and {routeStart} from {routeStartName}. Go to one of them to start the trip.",
+  "already_running": "This bus already has a trip running (started by another driver).",
+  "not_found": "Trip not found.",
+  "not_running": "This trip has already ended.",
+  "started": "Trip started.",
+  "ended": "Trip ended.",
+  "locations_saved": "Locations saved.",
+  "check_in_saved": "Thanks — your reply was sent.",
+  "sos_sent": "SOS sent. The school has been alerted.",
+  "acknowledged": "Alert acknowledged.",
+  "no_pickup_stop": "No pickup stop is set for your child yet. Contact the school.",
+  "no_bus_for_stop": "No bus serves your pickup stop yet. Contact the school."
+}

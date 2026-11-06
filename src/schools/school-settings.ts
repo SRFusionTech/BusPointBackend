@@ -9,7 +9,7 @@
  */
 
 /** Who manages parent subscriptions (plans, renewals, payment collection). */
-export const SUBSCRIPTION_MANAGERS = ['platform', 'school'] as const;
+export const SUBSCRIPTION_MANAGERS = ['platform', 'school', 'both'] as const;
 export type SubscriptionManager = (typeof SUBSCRIPTION_MANAGERS)[number];
 
 export interface SchoolSettings {

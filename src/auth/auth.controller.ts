@@ -1,12 +1,12 @@
 import {
   Body, Controller, ForbiddenException, Get, HttpCode,
-  HttpStatus, Post, Req, Res,
+  HttpStatus, Post,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { MobileLoginDto } from './dto/mobile-login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { RefreshDto } from './dto/refresh.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -21,33 +21,33 @@ export class AuthController {
   @Public()
   @Post('web/login')
   @HttpCode(HttpStatus.OK)
-  webLogin(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    return this.auth.webLogin(dto, res);
+  webLogin(@Body() dto: LoginDto) {
+    return this.auth.webLogin(dto);
   }
 
   /** Mobile login — DRIVER and PARENT only, uses phone + password */
   @Public()
   @Post('mobile/login')
   @HttpCode(HttpStatus.OK)
-  mobileLogin(@Body() dto: MobileLoginDto, @Res({ passthrough: true }) res: Response) {
-    return this.auth.mobileLogin(dto, res);
+  mobileLogin(@Body() dto: MobileLoginDto) {
+    return this.auth.mobileLogin(dto);
   }
 
   /**
-   * Silent refresh — uses the refresh_token cookie, issues a new access token.
+   * Silent refresh — takes the stored refresh token in the body, issues a new token pair.
    * @Public because the access token is already expired at this point.
    */
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    return this.auth.refresh(req, res);
+  refresh(@Body() dto: RefreshDto) {
+    return this.auth.refresh(dto.refreshToken);
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    return this.auth.logout(req, res);
+  logout(@Body() dto: RefreshDto) {
+    return this.auth.logout(dto.refreshToken);
   }
 
   @Get('me')

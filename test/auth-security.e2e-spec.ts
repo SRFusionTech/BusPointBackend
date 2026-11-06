@@ -18,30 +18,26 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import request from 'supertest';
-import cookieParser from 'cookie-parser';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module';
 import { GlobalExceptionFilter } from '../src/common/filters/global-exception.filter';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function extractCookies(res: request.Response): Record<string, string> {
-  const cookies: Record<string, string> = {};
-  const setCookie = res.headers['set-cookie'] as string[] | string | undefined;
-  if (!setCookie) return cookies;
-  const list = Array.isArray(setCookie) ? setCookie : [setCookie];
-  for (const c of list) {
-    const [pair] = c.split(';');
-    const [name, value] = pair.split('=');
-    cookies[name.trim()] = value?.trim() ?? '';
-  }
-  return cookies;
+interface Tokens {
+  accessToken?: string;
+  refreshToken?: string;
 }
 
-function cookieHeader(cookies: Record<string, string>): string {
-  return Object.entries(cookies)
-    .map(([k, v]) => `${k}=${v}`)
-    .join('; ');
+function extractTokens(res: request.Response): Tokens {
+  return {
+    accessToken: res.body?.data?.accessToken,
+    refreshToken: res.body?.data?.refreshToken,
+  };
+}
+
+function bearer(tokens: Tokens): string {
+  return `Bearer ${tokens.accessToken}`;
 }
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
@@ -59,7 +55,6 @@ describe('Auth & Role Security (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api');
-    app.use(cookieParser());
     app.useGlobalFilters(new GlobalExceptionFilter());
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
@@ -114,7 +109,7 @@ describe('Auth & Role Security (e2e)', () => {
     ] as const;
 
     for (const ep of protectedEndpoints) {
-      it(`${ep.method} ${ep.path} → 401 without cookie`, async () => {
+      it(`${ep.method} ${ep.path} → 401 without token`, async () => {
         const res = await (request(app.getHttpServer()) as any)[ep.method.toLowerCase()](ep.path)
           .send({})
           .expect(401);
@@ -126,7 +121,7 @@ describe('Auth & Role Security (e2e)', () => {
   // ── 3 + 4. Role guards ────────────────────────────────────────────────────
 
   describe('Role guards — SUPER_ADMIN login', () => {
-    let superAdminCookies: Record<string, string> = {};
+    let superAdmin: Tokens = {};
 
     beforeAll(async () => {
       const res = await request(app.getHttpServer())
@@ -142,15 +137,16 @@ describe('Auth & Role Security (e2e)', () => {
         return;
       }
 
-      superAdminCookies = extractCookies(res);
-      expect(superAdminCookies['access_token']).toBeTruthy();
+      superAdmin = extractTokens(res);
+      expect(superAdmin.accessToken).toBeTruthy();
+      expect(superAdmin.refreshToken).toBeTruthy();
     });
 
-    it('GET /api/auth/me → 200 with valid cookie', async () => {
-      if (!superAdminCookies['access_token']) return;
+    it('GET /api/auth/me → 200 with valid Bearer token', async () => {
+      if (!superAdmin.accessToken) return;
       const res = await request(app.getHttpServer())
         .get('/api/auth/me')
-        .set('Cookie', cookieHeader(superAdminCookies))
+        .set('Authorization', bearer(superAdmin))
         .expect(200);
 
       expect(res.body.success).toBe(true);
@@ -158,18 +154,18 @@ describe('Auth & Role Security (e2e)', () => {
     });
 
     it('GET /api/schools → 200 for super_admin', async () => {
-      if (!superAdminCookies['access_token']) return;
+      if (!superAdmin.accessToken) return;
       await request(app.getHttpServer())
         .get('/api/schools')
-        .set('Cookie', cookieHeader(superAdminCookies))
+        .set('Authorization', bearer(superAdmin))
         .expect(200);
     });
 
     it('POST /api/auth/change-password → 403 for super_admin', async () => {
-      if (!superAdminCookies['access_token']) return;
+      if (!superAdmin.accessToken) return;
       const res = await request(app.getHttpServer())
         .post('/api/auth/change-password')
-        .set('Cookie', cookieHeader(superAdminCookies))
+        .set('Authorization', bearer(superAdmin))
         .send({ currentPassword: 'any', newPassword: 'NewPass1234!' })
         .expect(403);
 
@@ -188,7 +184,7 @@ describe('Auth & Role Security (e2e)', () => {
   // ── 5. Refresh token ──────────────────────────────────────────────────────
 
   describe('Refresh token flow', () => {
-    let cookies: Record<string, string> = {};
+    let tokens: Tokens = {};
 
     beforeAll(async () => {
       const res = await request(app.getHttpServer())
@@ -197,45 +193,45 @@ describe('Auth & Role Security (e2e)', () => {
           email: process.env.SUPER_ADMIN_EMAIL ?? 'superadmin@buspoint.app',
           password: process.env.SUPER_ADMIN_PASSWORD ?? 'BusPoint@SuperAdmin#1',
         });
-      if (res.status === 200) cookies = extractCookies(res);
+      if (res.status === 200) tokens = extractTokens(res);
     });
 
-    it('POST /api/auth/refresh with valid refresh cookie → 200 + new access token', async () => {
-      if (!cookies['refresh_token']) return;
+    it('POST /api/auth/refresh with valid refresh token → 200 + new access token', async () => {
+      if (!tokens.refreshToken) return;
       const res = await request(app.getHttpServer())
         .post('/api/auth/refresh')
-        .set('Cookie', cookieHeader(cookies))
+        .send({ refreshToken: tokens.refreshToken })
         .expect(200);
 
       expect(res.body.success).toBe(true);
       expect(res.body.data.accessTokenExpiresAt).toBeGreaterThan(Date.now());
+      expect(res.body.data.accessToken).toBeTruthy();
 
-      // Update cookies from response (rotation)
-      const newCookies = extractCookies(res);
-      if (newCookies['refresh_token']) {
-        cookies = { ...cookies, ...newCookies };
-      }
+      // Rotation: the response carries a new refresh token
+      const rotated = extractTokens(res);
+      expect(rotated.refreshToken).not.toBe(tokens.refreshToken);
+      tokens = rotated;
     });
 
-    it('POST /api/auth/refresh without cookie → 401', async () => {
+    it('POST /api/auth/refresh without token → 401', async () => {
       await request(app.getHttpServer())
         .post('/api/auth/refresh')
         .expect(401);
     });
 
     it('POST /api/auth/refresh with consumed (rotated) token → 401', async () => {
-      if (!cookies['refresh_token']) return;
+      if (!tokens.refreshToken) return;
 
       // Use token once — this rotates it
       await request(app.getHttpServer())
         .post('/api/auth/refresh')
-        .set('Cookie', cookieHeader(cookies))
+        .send({ refreshToken: tokens.refreshToken })
         .expect(200);
 
       // Using the same token again should fail
       await request(app.getHttpServer())
         .post('/api/auth/refresh')
-        .set('Cookie', cookieHeader(cookies))
+        .send({ refreshToken: tokens.refreshToken })
         .expect(401);
     });
   });
@@ -253,18 +249,19 @@ describe('Auth & Role Security (e2e)', () => {
         });
       if (loginRes.status !== 200) return;
 
-      const cookies = extractCookies(loginRes);
+      const session = extractTokens(loginRes);
 
       // Logout
       await request(app.getHttpServer())
         .post('/api/auth/logout')
-        .set('Cookie', cookieHeader(cookies))
+        .set('Authorization', bearer(session))
+        .send({ refreshToken: session.refreshToken })
         .expect(200);
 
       // Refresh should now fail — token was deleted from DB
       await request(app.getHttpServer())
         .post('/api/auth/refresh')
-        .set('Cookie', cookieHeader(cookies))
+        .send({ refreshToken: session.refreshToken })
         .expect(401);
     });
   });
@@ -290,10 +287,10 @@ describe('Auth & Role Security (e2e)', () => {
         });
       if (loginRes.status !== 200) return;
 
-      const cookies = extractCookies(loginRes);
+      const session = extractTokens(loginRes);
       await request(app.getHttpServer())
         .get('/api/schools/not-a-uuid')
-        .set('Cookie', cookieHeader(cookies))
+        .set('Authorization', bearer(session))
         .expect(400);
     });
   });

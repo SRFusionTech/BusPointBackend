@@ -8,6 +8,6 @@ export class CreateDriverDto {
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/^\+?[0-9]{7,15}$/, { message: 'phone must be a valid phone number' })
+  @Matches(/^[6-9]\d{9}$/, { message: 'phone must be a valid 10-digit mobile number' })
   phone!: string;
 }
