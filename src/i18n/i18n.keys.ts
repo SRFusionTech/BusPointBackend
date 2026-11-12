@@ -122,4 +122,10 @@ export const I18nKey = {
     DELETED: 'plan.deleted',
     IN_USE: 'plan.in_use',
   },
+  DEMO: {
+    RECEIVED: 'demo.received',
+    TOO_MANY: 'demo.too_many',
+    NOT_FOUND: 'demo.not_found',
+    UPDATED: 'demo.updated',
+  },
 } as const;

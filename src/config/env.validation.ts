@@ -11,7 +11,7 @@ const envSchema = z.object({
   DB_USERNAME: z.string().optional(),
   DB_PASSWORD: z.string().optional(),
   DB_NAME: z.string().optional(),
-  DB_SSL: z.coerce.boolean().default(false),
+  DB_SSL: z.stringbool().default(false),
 
   DB_POOL_MIN: z.coerce.number().default(2),
   DB_POOL_MAX: z.coerce.number().default(20),
@@ -20,8 +20,9 @@ const envSchema = z.object({
   DB_IDLE_TIMEOUT_MS: z.coerce.number().default(600000),
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().default(30000),
 
-  DB_SYNC: z.coerce.boolean().default(false),
-  DB_LOGGING: z.coerce.boolean().default(false),
+  // stringbool: "false"/"0"/"no" → false. (z.coerce.boolean() made any non-empty string true.)
+  DB_SYNC: z.stringbool().default(false),
+  DB_LOGGING: z.stringbool().default(false),
 
   CORS_ORIGINS: z.string().optional(),
 

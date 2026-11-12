@@ -9,6 +9,7 @@ import { DriversModule } from './drivers/drivers.module';
 import { ParentsModule } from './parents/parents.module';
 import { ClassesModule } from './classes/classes.module';
 import { TrackingModule } from './tracking/tracking.module';
+import { DemoRequestsModule } from './demo-requests/demo-requests.module';
 import { RolesGuard } from './common/guards/roles.guard';
 import { I18nModule, AcceptLanguageResolver, QueryResolver, HeaderResolver } from 'nestjs-i18n';
 import * as path from 'path';
@@ -53,6 +54,7 @@ import { I18nBridge } from './i18n/translate';
     ParentsModule,
     ClassesModule,
     TrackingModule,
+    DemoRequestsModule,
   ],
   providers: [
     I18nBridge,
