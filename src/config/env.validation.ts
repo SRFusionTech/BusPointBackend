@@ -31,8 +31,8 @@ const envSchema = z.object({
   // Access token TTL in minutes (short-lived)
   JWT_ACCESS_TTL_MINUTES: z.coerce.number().default(15),
   // Refresh token TTL in days — separate for web and mobile
-  JWT_REFRESH_TTL_DAYS_WEB: z.coerce.number().default(7),
-  JWT_REFRESH_TTL_DAYS_MOBILE: z.coerce.number().default(30),
+  JWT_REFRESH_TTL_DAYS_WEB: z.coerce.number().default(30),
+  JWT_REFRESH_TTL_DAYS_MOBILE: z.coerce.number().default(180),
 
   // Road-following trip paths: OSRM (free) is used; override the server with OSRM_URL (e.g. self-hosted).
   OSRM_URL: z.string().optional(),

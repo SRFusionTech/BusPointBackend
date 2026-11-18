@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { AuthSchemaPatch } from './auth-schema.patch';
 import { User } from '../users/user.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { School } from '../schools/school.entity';
@@ -27,7 +28,7 @@ import { SchoolClass } from '../classes/school-class.entity';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, AuthSchemaPatch],
   exports: [JwtModule],
 })
 export class AuthModule {}

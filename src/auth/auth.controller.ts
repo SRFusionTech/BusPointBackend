@@ -44,6 +44,12 @@ export class AuthController {
     return this.auth.refresh(dto.refreshToken);
   }
 
+  /**
+   * Sign out this device. @Public: the refresh token in the body identifies the session, and the
+   * access token may already be expired (the mobile app sends none) — before this, mobile sign-out
+   * got a 401 and the session stayed alive on the server.
+   */
+  @Public()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   logout(@Body() dto: RefreshDto) {

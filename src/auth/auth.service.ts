@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, LessThan, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { I18nService, I18nContext } from 'nestjs-i18n';
@@ -36,6 +36,15 @@ function hashToken(raw: string): string {
 function generateRefreshToken(): string {
   return crypto.randomBytes(40).toString('hex');
 }
+
+/**
+ * A rotated refresh token may be presented again for this long without question: covers two app
+ * contexts (foreground app + background GPS task, two browser tabs) refreshing at the same moment.
+ * After it, the old token is still accepted as long as its successor was never used — the client
+ * evidently never received it (lost response, timeout, offline) — otherwise it's a replay → the
+ * whole session is revoked.
+ */
+const ROTATION_GRACE_MS = 2 * 60_000;
 
 const WEB_ROLES = [Role.SUPER_ADMIN, Role.SCHOOL_ADMIN];
 const MOBILE_ROLES = [Role.DRIVER, Role.PARENT];
@@ -66,6 +75,7 @@ export class AuthService {
     private readonly classRepo: Repository<SchoolClass>,
     private readonly i18n: I18nService,
     private readonly config: ConfigService,
+    private readonly dataSource: DataSource,
   ) {
     this.accessTtlMs = this.config.get<number>('JWT_ACCESS_TTL_MINUTES')! * 60 * 1000;
     this.refreshTtlDaysWeb = this.config.get<number>('JWT_REFRESH_TTL_DAYS_WEB')!;
@@ -106,25 +116,23 @@ export class AuthService {
   }
 
   /**
-   * Silent refresh — called with the refresh token the client stored at login.
-   * Rotates the refresh token on every use (old one deleted).
-   * If the same refresh token is used twice → wipe all sessions (reuse attack).
+   * Silent refresh — the client posts the refresh token it holds and gets a new pair.
+   *
+   * Sessions behave like big consumer apps: a device stays signed in as long as it keeps being used
+   * (every refresh issues a token with a fresh JWT_REFRESH_TTL_DAYS_* lifetime). Only a deliberate
+   * event ends a session: sign-out, password change, account blocked, plan expired, inactivity past the
+   * TTL, or a detected token replay. Network trouble never does — retrying with the previous token is safe.
    */
   async refresh(rawToken?: string) {
     if (!rawToken) {
       throw new UnauthorizedException('No refresh token.');
     }
 
-    const tokenHash = hashToken(rawToken);
     const stored = await this.refreshRepo.findOne({
-      where: { tokenHash },
+      where: { tokenHash: hashToken(rawToken) },
       relations: { user: true },
     });
-
-    // Token not found — could be reuse after rotation (stolen token scenario)
     if (!stored) {
-      // Attempt to find by partial match is not possible with hash.
-      // Best effort: if caller has user context, wipe their sessions.
       throw new UnauthorizedException('Invalid or already-used refresh token. Please log in again.');
     }
 
@@ -144,24 +152,57 @@ export class AuthService {
       throw new UnauthorizedException(this.t(I18nKey.AUTH.ACCOUNT_INACTIVE));
     }
 
-    // Rotate: delete old token, issue new pair
-    await this.refreshRepo.delete({ id: stored.id });
+    const familyId = stored.familyId ?? stored.id; // tokens from before sessions: their own session
+    const now = Date.now();
+    let orphanSuccessorId: string | null = null;
 
-    const refreshTtlDays = WEB_ROLES.includes(user.role)
-      ? this.refreshTtlDaysWeb
-      : this.refreshTtlDaysMobile;
+    if (stored.replacedAt) {
+      // Already rotated once. Safe retry, or a replay?
+      const successor = stored.replacedBy ? await this.refreshRepo.findOne({ where: { id: stored.replacedBy } }) : null;
+      const successorUnused = !!successor && !successor.replacedAt;
+      const withinGrace = now - stored.replacedAt.getTime() < ROTATION_GRACE_MS;
+      if (!withinGrace && !successorUnused) {
+        await this.revokeSession(familyId, stored.id);
+        this.logger.warn(`Refresh token replay for user ${user.id}: session ${familyId} revoked`);
+        throw new UnauthorizedException('This session was signed out for security. Please log in again.');
+      }
+      // Outside the grace window an unused successor was never delivered: retire it.
+      if (!withinGrace && successorUnused) orphanSuccessorId = successor.id;
+    }
 
+    // Check before touching tokens: a failure here must leave the session exactly as it was.
     const audience = MOBILE_ROLES.includes(user.role) ? 'app' : 'admin';
     await this.assertPlanActive(user, audience);
 
-    return this.issueTokens(user, refreshTtlDays);
+    const refreshTtlDays = WEB_ROLES.includes(user.role) ? this.refreshTtlDaysWeb : this.refreshTtlDaysMobile;
+
+    // One transaction: the new token exists before the old one is retired, so a DB failure midway can
+    // never leave the client holding no valid token.
+    const raw = await this.dataSource.transaction(async (em) => {
+      const repo = em.getRepository(RefreshToken);
+      const { raw: fresh, row } = await this.createRefreshToken(em, user.id, refreshTtlDays, familyId);
+      await repo.update({ id: stored.id }, { familyId, replacedAt: new Date(now), replacedBy: row.id });
+      if (orphanSuccessorId) await repo.delete({ id: orphanSuccessorId });
+      // Presenting `stored` proves the client holds it, so tokens it replaced are obsolete.
+      await repo.delete({ replacedBy: stored.id, replacedAt: LessThan(new Date(now - ROTATION_GRACE_MS)) });
+      return fresh;
+    });
+
+    return this.tokenResponse(user, raw);
   }
 
+  /** Sign out this device: the whole session (every token descended from its login) stops working. */
   async logout(rawToken?: string) {
     if (rawToken) {
-      await this.refreshRepo.delete({ tokenHash: hashToken(rawToken) });
+      const stored = await this.refreshRepo.findOne({ where: { tokenHash: hashToken(rawToken) } });
+      if (stored) await this.revokeSession(stored.familyId ?? stored.id, stored.id);
     }
     return successResponse(null, this.t(I18nKey.AUTH.LOGGED_OUT));
+  }
+
+  private async revokeSession(familyId: string, tokenId: string): Promise<void> {
+    await this.refreshRepo.delete({ familyId });
+    await this.refreshRepo.delete({ id: tokenId }); // legacy token without a family
   }
 
   async me(userId: string) {
@@ -233,35 +274,43 @@ export class AuthService {
    * body; the client sends `Authorization: Bearer <accessToken>` and posts the
    * refresh token to /auth/refresh and /auth/logout.
    */
+  /** Login: a new device session. */
   private async issueTokens(user: User, refreshTtlDays: number) {
+    const { raw } = await this.createRefreshToken(this.dataSource.manager, user.id, refreshTtlDays, crypto.randomUUID());
+    return this.tokenResponse(user, raw);
+  }
+
+  private async createRefreshToken(em: EntityManager, userId: string, refreshTtlDays: number, familyId: string) {
+    const repo = em.getRepository(RefreshToken);
+    const raw = generateRefreshToken();
+    const row = await repo.save(
+      repo.create({
+        userId,
+        tokenHash: hashToken(raw),
+        familyId,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * refreshTtlDays),
+      }),
+    );
+    return { raw, row };
+  }
+
+  private tokenResponse(user: User, rawRefresh: string) {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       role: user.role,
       schoolId: user.schoolId,
     };
-
-    // Access token
     const accessToken = this.jwt.sign(payload, { expiresIn: this.accessTtlMs / 1000 });
-    const accessTokenExpiresAt = Date.now() + this.accessTtlMs;
 
-    // Refresh token
-    const rawRefresh = generateRefreshToken();
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * refreshTtlDays);
-    await this.refreshRepo.save(
-      this.refreshRepo.create({
-        userId: user.id,
-        tokenHash: hashToken(rawRefresh),
-        expiresAt,
-      }),
-    );
-
-    this.logger.log(`Auth: ${user.email} (${user.role})`);
+    this.logger.log(`Auth: ${user.email ?? user.id} (${user.role})`);
 
     return successResponse({
       role: user.role,
       email: user.email,
-      accessTokenExpiresAt, // Unix ms — store client-side for proactive refresh
+      accessTokenExpiresAt: Date.now() + this.accessTtlMs, // Unix ms (server clock)
+      /** Seconds until the access token expires — clients add this to THEIR clock (immune to clock skew). */
+      accessTokenExpiresIn: Math.floor(this.accessTtlMs / 1000),
       accessToken,
       refreshToken: rawRefresh,
     });

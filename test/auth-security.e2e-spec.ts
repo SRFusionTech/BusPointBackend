@@ -219,21 +219,25 @@ describe('Auth & Role Security (e2e)', () => {
         .expect(401);
     });
 
-    it('POST /api/auth/refresh with consumed (rotated) token → 401', async () => {
+    it('POST /api/auth/refresh retried with the same token (lost response) → 200, session continues', async () => {
       if (!tokens.refreshToken) return;
 
-      // Use token once — this rotates it
+      // First refresh rotates the token — pretend the response never reached the client
       await request(app.getHttpServer())
         .post('/api/auth/refresh')
         .send({ refreshToken: tokens.refreshToken })
         .expect(200);
 
-      // Using the same token again should fail
-      await request(app.getHttpServer())
+      // The client retries with the token it still holds: must NOT log the user out
+      const retry = await request(app.getHttpServer())
         .post('/api/auth/refresh')
         .send({ refreshToken: tokens.refreshToken })
-        .expect(401);
+        .expect(200);
+      tokens = extractTokens(retry);
     });
+
+    // Replay after the session moved on (→ 401 + session revoked) needs a clock past the 2-min grace:
+    // covered in src/auth/auth-sessions.spec.ts.
   });
 
   // ── 6. Logout invalidates refresh token ───────────────────────────────────
