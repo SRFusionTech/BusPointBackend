@@ -20,18 +20,21 @@ import { RoadRoutesService } from './road-routes.service';
 import { ParentTripsService } from './parent-trips.service';
 import { TrackingGateway } from './tracking.gateway';
 import { AuthModule } from '../auth/auth.module';
+import { PushModule } from '../push/push.module';
+import { TripNotifierService } from './trip-notifier.service';
 
 /** Live tracking + trip history. The backend is the only place that decides stop progress. */
 @Module({
   imports: [
     AuthModule, // JwtService for socket auth
+    PushModule,
     TypeOrmModule.forFeature([
       Trip, TripStop, TripLocation, TripEvent,
       Bus, BusDriver, Route, RouteStop, School, User, SchoolClass, ClassSection,
     ]),
   ],
   controllers: [TripsController],
-  providers: [TripChanges, RoadRoutesService, TripsService, ParentTripsService, TripMonitorService, TrackingGateway],
+  providers: [TripChanges, RoadRoutesService, TripsService, ParentTripsService, TripMonitorService, TrackingGateway, TripNotifierService],
   exports: [TripsService],
 })
 export class TrackingModule {}

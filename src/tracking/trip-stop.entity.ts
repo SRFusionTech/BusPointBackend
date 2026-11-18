@@ -48,4 +48,11 @@ export class TripStop {
   /** Live road distance from the bus while pending (m). */
   @Column({ name: 'distance_m', type: 'double precision', nullable: true, default: null })
   distanceM!: number | null;
+
+  /**
+   * "Bus is coming / 2 stops away" push sent. Not selected: the trip service loads and re-saves stops,
+   * and a loaded value would race with the notifier setting it.
+   */
+  @Column({ name: 'approach_notified_at', type: 'timestamptz', nullable: true, default: null, select: false })
+  approachNotifiedAt!: Date | null;
 }

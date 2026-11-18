@@ -128,4 +128,8 @@ export const I18nKey = {
     NOT_FOUND: 'demo.not_found',
     UPDATED: 'demo.updated',
   },
+  PUSH: {
+    REGISTERED: 'push.registered',
+    REMOVED: 'push.removed',
+  },
 } as const;

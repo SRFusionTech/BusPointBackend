@@ -31,4 +31,8 @@ export class TripEvent {
 
   @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
   payload!: Record<string, unknown>;
+
+  /** Push outbox: null until TripNotifierService has handled the event. */
+  @Column({ name: 'notified_at', type: 'timestamptz', nullable: true, default: null, select: false })
+  notifiedAt!: Date | null;
 }

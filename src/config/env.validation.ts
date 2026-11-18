@@ -39,6 +39,13 @@ const envSchema = z.object({
   // Optional paid fallback when OSRM fails (Google Routes API). Leave unset to never call Google.
   GOOGLE_MAPS_SERVER_KEY: z.string().optional(),
 
+  // Push notifications (FCM): service account of the Firebase project the app uses — the three values,
+  // or a path to the JSON key. Unset = pushes are skipped; everything else works.
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
+
   // Super admin seed — read once on startup
   SUPER_ADMIN_EMAIL: z.string().email().optional(),
   SUPER_ADMIN_PASSWORD: z.string().min(8).optional(),
